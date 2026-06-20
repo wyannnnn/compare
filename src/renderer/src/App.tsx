@@ -35,7 +35,7 @@ import {
 const logoUrl = new URL('./assets/logo.svg', import.meta.url).href
 const measureOrder: MeasureKind[] = ['count', 'volume', 'weight']
 const fixedCurrencyCode = 'CNY'
-type WeightDisplayUnit = 'kg' | 'g'
+type DisplayUnit = 'L' | 'ml' | 'kg' | 'g'
 
 function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) return '操作失败，请稍后重试'
@@ -72,10 +72,10 @@ function hasMeasure(list: ComparisonList, measureKind: MeasureKind): boolean {
   return activeMeasureKind(list) === measureKind
 }
 
-function unitPriceTitle(measureKind: MeasureKind, weightDisplayUnit: WeightDisplayUnit = 'kg'): string {
+function unitPriceTitle(measureKind: MeasureKind, displayUnit?: DisplayUnit | null): string {
   if (measureKind === 'count') return '每件 / 每瓶'
-  if (measureKind === 'volume') return '每升'
-  return weightDisplayUnit === 'g' ? '每克' : '每千克'
+  if (measureKind === 'volume') return displayUnit === 'ml' ? '每毫升' : '每升'
+  return displayUnit === 'g' ? '每克' : '每千克'
 }
 
 function contentSpec(card: PriceCard, list: ComparisonList): string[] {
@@ -97,15 +97,41 @@ function displayUnitPrice(
   value: string,
   unitLabel: '件' | 'L' | 'kg',
   adjusted: boolean,
-  weightDisplayUnit: WeightDisplayUnit
+  displayUnit: DisplayUnit | null
 ): { value: string, unitLabel: string } {
-  if (unitLabel !== 'kg' || weightDisplayUnit === 'kg') {
-    return { value, unitLabel: adjusted ? `有效 ${unitLabel}` : unitLabel }
+  if ((unitLabel === 'L' && displayUnit === 'ml') || (unitLabel === 'kg' && displayUnit === 'g')) {
+    return {
+      value: new Decimal(value).div(1000).toString(),
+      unitLabel: adjusted ? `有效 ${displayUnit}` : displayUnit
+    }
   }
-  return {
-    value: new Decimal(value).div(1000).toString(),
-    unitLabel: adjusted ? '有效 g' : 'g'
+  return { value, unitLabel: adjusted ? `有效 ${unitLabel}` : unitLabel }
+}
+
+function displayUnitFor(measureKind: MeasureKind, preferred?: DisplayUnit): DisplayUnit | null {
+  if (measureKind === 'volume') {
+    return preferred === 'ml' ? 'ml' : 'L'
   }
+  if (measureKind === 'weight') {
+    return preferred === 'g' ? 'g' : 'kg'
+  }
+  return null
+}
+
+function nextDisplayUnit(measureKind: MeasureKind, current?: DisplayUnit): DisplayUnit | null {
+  if (measureKind === 'volume') {
+    return current === 'ml' ? 'L' : 'ml'
+  }
+  if (measureKind === 'weight') {
+    return current === 'g' ? 'kg' : 'g'
+  }
+  return null
+}
+
+function displayUnitSwitchLabel(measureKind: MeasureKind): string | null {
+  if (measureKind === 'volume') return 'L/ml'
+  if (measureKind === 'weight') return 'kg/g'
+  return null
 }
 
 export function App(): React.JSX.Element {
@@ -117,7 +143,7 @@ export function App(): React.JSX.Element {
   const [listDialog, setListDialog] = useState<'create' | 'edit' | null>(null)
   const [drawerCard, setDrawerCard] = useState<PriceCard | 'new' | null>(null)
   const [backupMenuOpen, setBackupMenuOpen] = useState(false)
-  const [weightDisplayUnits, setWeightDisplayUnits] = useState<Record<string, WeightDisplayUnit>>({})
+  const [displayUnits, setDisplayUnits] = useState<Record<string, DisplayUnit>>({})
   const noticeTimer = useRef<number | null>(null)
   const selectedList = lists.find((list) => list.id === selectedId) ?? null
   const currentCards = useMemo(
@@ -307,11 +333,12 @@ export function App(): React.JSX.Element {
               list={selectedList}
               cards={currentCards}
               loading={loading}
-              weightDisplayUnit={weightDisplayUnits[selectedList.id] ?? 'kg'}
-              onToggleWeightDisplayUnit={() => setWeightDisplayUnits((current) => ({
-                ...current,
-                [selectedList.id]: current[selectedList.id] === 'g' ? 'kg' : 'g'
-              }))}
+              displayUnit={displayUnitFor(activeMeasureKind(selectedList), displayUnits[selectedList.id])}
+              onToggleDisplayUnit={() => setDisplayUnits((current) => {
+                const measureKind = activeMeasureKind(selectedList)
+                const next = nextDisplayUnit(measureKind, current[selectedList.id])
+                return next ? { ...current, [selectedList.id]: next } : current
+              })}
               onAdd={() => setDrawerCard('new')}
               onEdit={setDrawerCard}
               onDelete={deleteCard}
@@ -355,15 +382,15 @@ interface PriceBoardProps {
   list: ComparisonList
   cards: PriceCard[]
   loading: boolean
-  weightDisplayUnit: WeightDisplayUnit
-  onToggleWeightDisplayUnit(): void
+  displayUnit: DisplayUnit | null
+  onToggleDisplayUnit(): void
   onAdd(): void
   onEdit(card: PriceCard): void
   onDelete(card: PriceCard): void
   onReorder(cards: PriceCard[]): void
 }
 
-function PriceBoard({ list, cards, loading, weightDisplayUnit, onToggleWeightDisplayUnit, onAdd, onEdit, onDelete, onReorder }: PriceBoardProps): React.JSX.Element {
+function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, onAdd, onEdit, onDelete, onReorder }: PriceBoardProps): React.JSX.Element {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -412,14 +439,14 @@ function PriceBoard({ list, cards, loading, weightDisplayUnit, onToggleWeightDis
                 card={card}
                 list={list}
                 lowest={lowestIds.has(card.id)}
-                weightDisplayUnit={weightDisplayUnit}
-                onToggleWeightDisplayUnit={onToggleWeightDisplayUnit}
+                displayUnit={displayUnit}
+                onToggleDisplayUnit={onToggleDisplayUnit}
                 onEdit={() => onEdit(card)}
                 onDelete={() => onDelete(card)}
               />
             ))}
           </SortableContext>
-          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} weightDisplayUnit={weightDisplayUnit} onToggleWeightDisplayUnit={onToggleWeightDisplayUnit} overlay />}</DragOverlay>
+          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} displayUnit={displayUnit} onToggleDisplayUnit={onToggleDisplayUnit} overlay />}</DragOverlay>
         </DndContext>
       )}
       {cards.length > 0 && (
@@ -442,36 +469,21 @@ interface PriceCardViewProps {
   card: PriceCard
   list: ComparisonList
   lowest: boolean
-  weightDisplayUnit: WeightDisplayUnit
-  onToggleWeightDisplayUnit(): void
+  displayUnit: DisplayUnit | null
+  onToggleDisplayUnit(): void
   overlay?: boolean
   dragHandle?: React.ButtonHTMLAttributes<HTMLButtonElement>
   onEdit?(): void
   onDelete?(): void
 }
 
-function PriceCardView({ card, list, lowest, weightDisplayUnit, onToggleWeightDisplayUnit, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
+function PriceCardView({ card, list, lowest, displayUnit, onToggleDisplayUnit, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
   const measureKind = activeMeasureKind(list)
   const countResult = calculatePrice(card, 'count')
   const specs = contentSpec(card, list)
   const result = tryCalculatePrice(card, measureKind)
-  const display = result ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, weightDisplayUnit) : null
-  const unitPriceContent = (
-    <>
-      <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind, weightDisplayUnit)}</span>
-      {result && display ? (
-        <>
-          <strong>{formatCurrency(display.value, list.currencyCode, true)}</strong>
-          <small>/ {display.unitLabel}</small>
-        </>
-      ) : (
-        <>
-          <strong>待补充</strong>
-          <small>{measureKind === 'volume' ? '需要容量' : '需要重量'}</small>
-        </>
-      )}
-    </>
-  )
+  const display = result ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, displayUnit) : null
+  const switchLabel = result ? displayUnitSwitchLabel(measureKind) : null
   return (
     <article className={`price-card ${lowest ? 'lowest' : ''} ${overlay ? 'overlay-card' : ''}`}>
       <div className="card-topline">
@@ -494,21 +506,31 @@ function PriceCardView({ card, list, lowest, weightDisplayUnit, onToggleWeightDi
         <div className="note-row"><dt>备注</dt><dd title={card.note ?? undefined}>{card.note || '—'}</dd></div>
       </dl>
       <div className="unit-price-list">
-        {measureKind === 'weight' && result ? (
-          <button
-            type="button"
-            className={`unit-price unit-price-toggle ${lowest ? 'lowest-unit' : ''}`}
-            title="点击切换 kg/g"
-            aria-label="切换 kg/g 显示"
-            onClick={onToggleWeightDisplayUnit}
-          >
-            {unitPriceContent}
-          </button>
-        ) : (
-          <div className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
-            {unitPriceContent}
-          </div>
-        )}
+        <div className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
+          <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind, displayUnit)}</span>
+          {result && display ? (
+            <>
+              <strong>{formatCurrency(display.value, list.currencyCode, true)}</strong>
+              <small>/ {display.unitLabel}</small>
+              {switchLabel && (
+                <button
+                  type="button"
+                  className="unit-switch-button"
+                  title={`${switchLabel} 切换`}
+                  aria-label={`切换 ${switchLabel} 显示`}
+                  onClick={onToggleDisplayUnit}
+                >
+                  {switchLabel}
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <strong>待补充</strong>
+              <small>{measureKind === 'volume' ? '需要容量' : '需要重量'}</small>
+            </>
+          )}
+        </div>
       </div>
       {!overlay && (
         <div className="card-actions single-action">

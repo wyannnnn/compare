@@ -95,9 +95,9 @@ h1, h2, p { margin-top: 0; }
 .card-details dd { margin: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .note-row dd { max-width: 172px; }
 .unit-price-list { display: flex; flex-direction: column; gap: 7px; margin-top: auto; padding: 13px 3px 11px; }
-.unit-price { display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 4px; padding: 9px 10px; border: 1px solid transparent; border-radius: 12px; background: color-mix(in srgb, var(--soft) 55%, transparent); }
-.unit-price-toggle { width: 100%; color: inherit; text-align: left; cursor: pointer; font: inherit; }
-.unit-price-toggle:hover { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent); }
+.unit-price { display: grid; grid-template-columns: 1fr auto auto auto; align-items: baseline; gap: 4px; padding: 9px 10px; border: 1px solid transparent; border-radius: 12px; background: color-mix(in srgb, var(--soft) 55%, transparent); }
+.unit-switch-button { margin-left: 4px; padding: 3px 6px; border: 1px solid #9dd0b7; border-radius: 999px; color: var(--accent); background: color-mix(in srgb, white 55%, transparent); cursor: pointer; font-size: 10px; font-weight: 800; }
+.unit-switch-button:hover { background: var(--accent); color: white; }
 .unit-price.lowest-unit { border-color: #9dd0b7; background: var(--accent-soft); }
 .unit-price span { color: var(--muted); font-size: 11px; }
 .unit-price span em { margin-left: 5px; padding: 2px 5px; border-radius: 10px; color: var(--accent); background: color-mix(in srgb, white 55%, transparent); font-size: 9px; font-style: normal; font-weight: 800; }
