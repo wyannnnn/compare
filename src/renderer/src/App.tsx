@@ -32,8 +32,10 @@ import {
   type WeightUnit
 } from '../../shared/types'
 
+const logoUrl = new URL('./assets/logo.svg', import.meta.url).href
 const measureOrder: MeasureKind[] = ['count', 'volume', 'weight']
 const fixedCurrencyCode = 'CNY'
+type WeightDisplayUnit = 'kg' | 'g'
 
 function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) return '操作失败，请稍后重试'
@@ -70,10 +72,10 @@ function hasMeasure(list: ComparisonList, measureKind: MeasureKind): boolean {
   return activeMeasureKind(list) === measureKind
 }
 
-function unitPriceTitle(measureKind: MeasureKind): string {
+function unitPriceTitle(measureKind: MeasureKind, weightDisplayUnit: WeightDisplayUnit = 'kg'): string {
   if (measureKind === 'count') return '每件 / 每瓶'
   if (measureKind === 'volume') return '每升'
-  return '每千克'
+  return weightDisplayUnit === 'g' ? '每克' : '每千克'
 }
 
 function contentSpec(card: PriceCard, list: ComparisonList): string[] {
@@ -91,6 +93,21 @@ function formatMultiplier(value: string): string {
   return `${new Decimal(value).toDecimalPlaces(4).toString()} 倍`
 }
 
+function displayUnitPrice(
+  value: string,
+  unitLabel: '件' | 'L' | 'kg',
+  adjusted: boolean,
+  weightDisplayUnit: WeightDisplayUnit
+): { value: string, unitLabel: string } {
+  if (unitLabel !== 'kg' || weightDisplayUnit === 'kg') {
+    return { value, unitLabel: adjusted ? `有效 ${unitLabel}` : unitLabel }
+  }
+  return {
+    value: new Decimal(value).div(1000).toString(),
+    unitLabel: adjusted ? '有效 g' : 'g'
+  }
+}
+
 export function App(): React.JSX.Element {
   const [lists, setLists] = useState<ComparisonList[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -100,6 +117,7 @@ export function App(): React.JSX.Element {
   const [listDialog, setListDialog] = useState<'create' | 'edit' | null>(null)
   const [drawerCard, setDrawerCard] = useState<PriceCard | 'new' | null>(null)
   const [backupMenuOpen, setBackupMenuOpen] = useState(false)
+  const [weightDisplayUnits, setWeightDisplayUnits] = useState<Record<string, WeightDisplayUnit>>({})
   const noticeTimer = useRef<number | null>(null)
   const selectedList = lists.find((list) => list.id === selectedId) ?? null
   const currentCards = useMemo(
@@ -229,7 +247,7 @@ export function App(): React.JSX.Element {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark"><Icon>↕</Icon></div>
+          <img className="brand-mark" src={logoUrl} alt="" />
           <div><strong>比价卡</strong><span>把单价摆明白</span></div>
         </div>
         <div className="sidebar-title">
@@ -289,6 +307,11 @@ export function App(): React.JSX.Element {
               list={selectedList}
               cards={currentCards}
               loading={loading}
+              weightDisplayUnit={weightDisplayUnits[selectedList.id] ?? 'kg'}
+              onToggleWeightDisplayUnit={() => setWeightDisplayUnits((current) => ({
+                ...current,
+                [selectedList.id]: current[selectedList.id] === 'g' ? 'kg' : 'g'
+              }))}
               onAdd={() => setDrawerCard('new')}
               onEdit={setDrawerCard}
               onDelete={deleteCard}
@@ -332,13 +355,15 @@ interface PriceBoardProps {
   list: ComparisonList
   cards: PriceCard[]
   loading: boolean
+  weightDisplayUnit: WeightDisplayUnit
+  onToggleWeightDisplayUnit(): void
   onAdd(): void
   onEdit(card: PriceCard): void
   onDelete(card: PriceCard): void
   onReorder(cards: PriceCard[]): void
 }
 
-function PriceBoard({ list, cards, loading, onAdd, onEdit, onDelete, onReorder }: PriceBoardProps): React.JSX.Element {
+function PriceBoard({ list, cards, loading, weightDisplayUnit, onToggleWeightDisplayUnit, onAdd, onEdit, onDelete, onReorder }: PriceBoardProps): React.JSX.Element {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -387,12 +412,14 @@ function PriceBoard({ list, cards, loading, onAdd, onEdit, onDelete, onReorder }
                 card={card}
                 list={list}
                 lowest={lowestIds.has(card.id)}
+                weightDisplayUnit={weightDisplayUnit}
+                onToggleWeightDisplayUnit={onToggleWeightDisplayUnit}
                 onEdit={() => onEdit(card)}
                 onDelete={() => onDelete(card)}
               />
             ))}
           </SortableContext>
-          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} overlay />}</DragOverlay>
+          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} weightDisplayUnit={weightDisplayUnit} onToggleWeightDisplayUnit={onToggleWeightDisplayUnit} overlay />}</DragOverlay>
         </DndContext>
       )}
       {cards.length > 0 && (
@@ -415,17 +442,36 @@ interface PriceCardViewProps {
   card: PriceCard
   list: ComparisonList
   lowest: boolean
+  weightDisplayUnit: WeightDisplayUnit
+  onToggleWeightDisplayUnit(): void
   overlay?: boolean
   dragHandle?: React.ButtonHTMLAttributes<HTMLButtonElement>
   onEdit?(): void
   onDelete?(): void
 }
 
-function PriceCardView({ card, list, lowest, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
+function PriceCardView({ card, list, lowest, weightDisplayUnit, onToggleWeightDisplayUnit, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
   const measureKind = activeMeasureKind(list)
   const countResult = calculatePrice(card, 'count')
   const specs = contentSpec(card, list)
   const result = tryCalculatePrice(card, measureKind)
+  const display = result ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, weightDisplayUnit) : null
+  const unitPriceContent = (
+    <>
+      <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind, weightDisplayUnit)}</span>
+      {result && display ? (
+        <>
+          <strong>{formatCurrency(display.value, list.currencyCode, true)}</strong>
+          <small>/ {display.unitLabel}</small>
+        </>
+      ) : (
+        <>
+          <strong>待补充</strong>
+          <small>{measureKind === 'volume' ? '需要容量' : '需要重量'}</small>
+        </>
+      )}
+    </>
+  )
   return (
     <article className={`price-card ${lowest ? 'lowest' : ''} ${overlay ? 'overlay-card' : ''}`}>
       <div className="card-topline">
@@ -448,20 +494,21 @@ function PriceCardView({ card, list, lowest, overlay, dragHandle, onEdit, onDele
         <div className="note-row"><dt>备注</dt><dd title={card.note ?? undefined}>{card.note || '—'}</dd></div>
       </dl>
       <div className="unit-price-list">
-        <div className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
-          <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind)}</span>
-          {result ? (
-            <>
-              <strong>{formatCurrency(result.normalizedPrice, list.currencyCode, true)}</strong>
-              <small>/ {result.adjusted ? `有效 ${result.normalizedUnitLabel}` : result.normalizedUnitLabel}</small>
-            </>
-          ) : (
-            <>
-              <strong>待补充</strong>
-              <small>{measureKind === 'volume' ? '需要容量' : '需要重量'}</small>
-            </>
-          )}
-        </div>
+        {measureKind === 'weight' && result ? (
+          <button
+            type="button"
+            className={`unit-price unit-price-toggle ${lowest ? 'lowest-unit' : ''}`}
+            title="点击切换 kg/g"
+            aria-label="切换 kg/g 显示"
+            onClick={onToggleWeightDisplayUnit}
+          >
+            {unitPriceContent}
+          </button>
+        ) : (
+          <div className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
+            {unitPriceContent}
+          </div>
+        )}
       </div>
       {!overlay && (
         <div className="card-actions single-action">

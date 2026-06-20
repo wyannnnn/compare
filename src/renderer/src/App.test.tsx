@@ -118,6 +118,33 @@ describe('App', () => {
     expect(screen.getByText(/EE 可填/)).toBeInTheDocument()
   })
 
+  it('重量单价可以点击在 kg 和 g 之间切换展示', async () => {
+    const list: ComparisonList = {
+      id: 'oil-list', name: '鱼油', measureKind: 'weight', measureKinds: ['weight'],
+      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }
+    lists.push(list)
+    vi.mocked(api.cards.getAll).mockResolvedValue([{
+      id: 'oil-card', listId: list.id, name: '鱼油 100g', totalPrice: '100',
+      packageCount: 1, unitsPerPackage: 1, contentPerUnit: '100', contentUnit: 'g',
+      volumePerUnit: null, volumeUnit: null, weightPerUnit: '100', weightUnit: 'g',
+      activeIngredientPercent: null, absorptionMultiplier: null,
+      merchant: null, note: null, source: 'manual', sortIndex: 0,
+      createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }])
+
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '鱼油 100g' })).toBeInTheDocument()
+    expect(screen.getAllByText('每千克').length).toBeGreaterThan(0)
+    expect(screen.getByText('/ kg')).toBeInTheDocument()
+    const toggle = screen.getByLabelText('切换 kg/g 显示')
+    expect(toggle).toHaveAttribute('title', '点击切换 kg/g')
+    fireEvent.click(toggle)
+    expect(screen.getAllByText('每克').length).toBeGreaterThan(0)
+    expect(screen.getByText('/ g')).toBeInTheDocument()
+    expect(screen.getByText('¥1.00')).toBeInTheDocument()
+  })
+
   it('从件数清单切换到重量清单时不会用旧卡片执行重量计算', async () => {
     const countList: ComparisonList = {
       id: 'count-list', name: '抽纸', measureKind: 'count', currencyCode: 'CNY',
