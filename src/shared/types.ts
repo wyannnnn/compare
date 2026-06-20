@@ -7,8 +7,8 @@ export type InputSource = 'manual' | 'ocr'
 export interface ComparisonList {
   id: string
   /**
-   * 旧版只支持一个比较基准，保留该字段用于迁移和备份兼容。
-   * 新界面和计算逻辑使用 measureKinds。
+   * measureKinds 保留用于兼容短暂支持多基准的本地数据和备份。
+   * 产品界面始终只允许一个比较基准，业务逻辑以 measureKind 为准。
    */
   name: string
   measureKind: MeasureKind
@@ -41,6 +41,8 @@ export interface PriceCard {
   volumeUnit: VolumeUnit | null
   weightPerUnit: string | null
   weightUnit: WeightUnit | null
+  activeIngredientPercent: string | null
+  absorptionMultiplier: string | null
   merchant: string | null
   note: string | null
   source: InputSource
@@ -60,6 +62,8 @@ export interface CardDraft {
   volumeUnit?: VolumeUnit | null
   weightPerUnit?: string | null
   weightUnit?: WeightUnit | null
+  activeIngredientPercent?: string | null
+  absorptionMultiplier?: string | null
   merchant: string | null
   note: string | null
   source: InputSource
@@ -68,8 +72,12 @@ export interface CardDraft {
 export interface PriceCalculation {
   totalUnits: string
   normalizedQuantity: string
+  effectiveQuantity: string
   pricePerUnit: string
+  baseNormalizedPrice: string
   normalizedPrice: string
+  adjustmentFactor: string
+  adjusted: boolean
   normalizedUnitLabel: '件' | 'L' | 'kg'
 }
 

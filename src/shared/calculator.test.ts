@@ -35,9 +35,29 @@ describe('calculatePrice', () => {
     expect(result.pricePerUnit).toBe('0.1')
   })
 
+  it('按有效成分占比和倍率计算真实有效单价', () => {
+    const result = calculatePrice({
+      ...base,
+      totalPrice: '100',
+      packageCount: 1,
+      unitsPerPackage: 1,
+      contentPerUnit: '100',
+      contentUnit: 'g',
+      activeIngredientPercent: '72',
+      absorptionMultiplier: '0.65'
+    }, 'weight')
+    expect(result.normalizedQuantity).toBe('0.1')
+    expect(result.effectiveQuantity).toBe('0.0468')
+    expect(result.baseNormalizedPrice).toBe('1000')
+    expect(result.normalizedPrice).toBe('2136.7521367521367521')
+    expect(result.adjustmentFactor).toBe('0.468')
+    expect(result.adjusted).toBe(true)
+  })
+
   it('拒绝零值和错误单位', () => {
     expect(() => calculatePrice({ ...base, packageCount: 0 }, 'volume')).toThrow(ValidationError)
     expect(() => calculatePrice({ ...base, contentUnit: 'g' }, 'volume')).toThrow('容量单位')
+    expect(() => calculatePrice({ ...base, activeIngredientPercent: '101' }, 'volume')).toThrow('有效成分占比')
   })
 })
 
@@ -46,6 +66,7 @@ describe('findLowestCardIds', () => {
     id, listId: 'list', name: id, totalPrice, packageCount: 1, unitsPerPackage: 1,
     contentPerUnit: null, contentUnit: null, merchant: null, note: null, source: 'manual',
     volumePerUnit: null, volumeUnit: null, weightPerUnit: null, weightUnit: null,
+    activeIngredientPercent: null, absorptionMultiplier: null,
     sortIndex: 0, createdAt: '', updatedAt: ''
   })
 

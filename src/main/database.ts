@@ -54,12 +54,11 @@ function weightUnitFromRow(row: DbRow): PriceCard['weightUnit'] {
 
 function listFromRow(row: DbRow): ComparisonList {
   const fallbackMeasureKind = String(row.measure_kind) as ComparisonList['measureKind']
-  const measureKinds = parseMeasureKinds(row.measure_kinds, fallbackMeasureKind)
   return {
     id: String(row.id),
     name: String(row.name),
-    measureKind: measureKinds[0],
-    measureKinds,
+    measureKind: fallbackMeasureKind,
+    measureKinds: [fallbackMeasureKind],
     currencyCode: String(row.currency_code),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
@@ -86,6 +85,8 @@ function cardFromRow(row: DbRow): PriceCard {
       ? (weightUnit && row.content_per_unit != null ? String(row.content_per_unit) : null)
       : String(row.weight_per_unit),
     weightUnit,
+    activeIngredientPercent: row.active_ingredient_percent == null ? null : String(row.active_ingredient_percent),
+    absorptionMultiplier: row.absorption_multiplier == null ? null : String(row.absorption_multiplier),
     merchant: row.merchant == null ? null : String(row.merchant),
     note: row.note == null ? null : String(row.note),
     source: String(row.source) as PriceCard['source'],
@@ -132,6 +133,8 @@ export class PriceRepository {
         volume_unit TEXT CHECK (volume_unit IS NULL OR volume_unit IN ('ml', 'L')),
         weight_per_unit TEXT,
         weight_unit TEXT CHECK (weight_unit IS NULL OR weight_unit IN ('g', 'kg')),
+        active_ingredient_percent TEXT,
+        absorption_multiplier TEXT,
         merchant TEXT,
         note TEXT,
         source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'ocr')),
@@ -149,9 +152,11 @@ export class PriceRepository {
     this.addColumnIfMissing('price_cards', 'volume_unit', "TEXT CHECK (volume_unit IS NULL OR volume_unit IN ('ml', 'L'))")
     this.addColumnIfMissing('price_cards', 'weight_per_unit', 'TEXT')
     this.addColumnIfMissing('price_cards', 'weight_unit', "TEXT CHECK (weight_unit IS NULL OR weight_unit IN ('g', 'kg'))")
+    this.addColumnIfMissing('price_cards', 'active_ingredient_percent', 'TEXT')
+    this.addColumnIfMissing('price_cards', 'absorption_multiplier', 'TEXT')
     this.db.prepare("UPDATE price_cards SET volume_per_unit = content_per_unit, volume_unit = content_unit WHERE content_unit IN ('ml', 'L') AND volume_per_unit IS NULL").run()
     this.db.prepare("UPDATE price_cards SET weight_per_unit = content_per_unit, weight_unit = content_unit WHERE content_unit IN ('g', 'kg') AND weight_per_unit IS NULL").run()
-    this.db.prepare("UPDATE app_meta SET value = '2' WHERE key = 'schema_version'").run()
+    this.db.prepare("UPDATE app_meta SET value = '3' WHERE key = 'schema_version'").run()
   }
 
   private addColumnIfMissing(table: string, column: string, definition: string): void {
@@ -210,7 +215,7 @@ export class PriceRepository {
 
   createCard(listId: string, input: CardDraft): PriceCard {
     const list = this.requireList(listId)
-    const draft = validateCardDraft(input, list.measureKinds)
+    const draft = validateCardDraft(input, list.measureKind)
     const maxRow = this.db.prepare('SELECT COALESCE(MAX(sort_index), -1) AS max_sort FROM price_cards WHERE list_id = ?').get(listId) as DbRow
     const now = new Date().toISOString()
     const card: PriceCard = {
@@ -223,17 +228,17 @@ export class PriceRepository {
   updateCard(id: string, input: CardDraft): PriceCard {
     const current = this.requireCard(id)
     const list = this.requireList(current.listId)
-    const draft = validateCardDraft(input, list.measureKinds)
+    const draft = validateCardDraft(input, list.measureKind)
     const updatedAt = new Date().toISOString()
     this.db.prepare(`
       UPDATE price_cards SET name = ?, total_price = ?, package_count = ?, units_per_package = ?,
         content_per_unit = ?, content_unit = ?, volume_per_unit = ?, volume_unit = ?, weight_per_unit = ?, weight_unit = ?,
-        merchant = ?, note = ?, source = ?, updated_at = ?
+        active_ingredient_percent = ?, absorption_multiplier = ?, merchant = ?, note = ?, source = ?, updated_at = ?
       WHERE id = ?
     `).run(
       draft.name, draft.totalPrice, draft.packageCount, draft.unitsPerPackage,
       draft.contentPerUnit, draft.contentUnit, draft.volumePerUnit, draft.volumeUnit, draft.weightPerUnit, draft.weightUnit,
-      draft.merchant, draft.note, draft.source, updatedAt, id
+      draft.activeIngredientPercent, draft.absorptionMultiplier, draft.merchant, draft.note, draft.source, updatedAt, id
     )
     return { ...current, ...draft, updatedAt }
   }
@@ -288,12 +293,12 @@ export class PriceRepository {
       INSERT INTO price_cards(
         id, list_id, name, total_price, package_count, units_per_package,
         content_per_unit, content_unit, volume_per_unit, volume_unit, weight_per_unit, weight_unit,
-        merchant, note, source, sort_index, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        active_ingredient_percent, absorption_multiplier, merchant, note, source, sort_index, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       card.id, card.listId, card.name, card.totalPrice, card.packageCount, card.unitsPerPackage,
       card.contentPerUnit, card.contentUnit, card.volumePerUnit, card.volumeUnit, card.weightPerUnit, card.weightUnit,
-      card.merchant, card.note, card.source,
+      card.activeIngredientPercent, card.absorptionMultiplier, card.merchant, card.note, card.source,
       card.sortIndex, card.createdAt, card.updatedAt
     )
   }

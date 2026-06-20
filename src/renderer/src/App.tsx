@@ -58,16 +58,16 @@ function Icon({ children }: { children: React.ReactNode }): React.JSX.Element {
   return <span aria-hidden="true">{children}</span>
 }
 
-function normalizedListMeasures(list: ComparisonList): MeasureKind[] {
-  return list.measureKinds?.length ? list.measureKinds : [list.measureKind]
+function activeMeasureKind(list: ComparisonList): MeasureKind {
+  return list.measureKind ?? list.measureKinds?.[0] ?? 'volume'
 }
 
-function measureSummary(measureKinds: MeasureKind[]): string {
-  return measureKinds.map((kind) => SHORT_MEASURE_LABELS[kind]).join(' + ')
+function measureSummary(list: ComparisonList): string {
+  return SHORT_MEASURE_LABELS[activeMeasureKind(list)]
 }
 
 function hasMeasure(list: ComparisonList, measureKind: MeasureKind): boolean {
-  return normalizedListMeasures(list).includes(measureKind)
+  return activeMeasureKind(list) === measureKind
 }
 
 function unitPriceTitle(measureKind: MeasureKind): string {
@@ -81,6 +81,14 @@ function contentSpec(card: PriceCard, list: ComparisonList): string[] {
   if (hasMeasure(list, 'volume')) specs.push(card.volumePerUnit && card.volumeUnit ? `${card.volumePerUnit} ${card.volumeUnit}/件` : '容量待补充')
   if (hasMeasure(list, 'weight')) specs.push(card.weightPerUnit && card.weightUnit ? `${card.weightPerUnit} ${card.weightUnit}/件` : '重量待补充')
   return specs
+}
+
+function formatPercent(value: string): string {
+  return `${new Decimal(value).toDecimalPlaces(2).toString()}%`
+}
+
+function formatMultiplier(value: string): string {
+  return `${new Decimal(value).toDecimalPlaces(4).toString()} 倍`
 }
 
 export function App(): React.JSX.Element {
@@ -237,7 +245,7 @@ export function App(): React.JSX.Element {
                   }}
             >
               <span className="list-dot" />
-              <span className="list-nav-copy"><strong>{list.name}</strong><small>{measureSummary(normalizedListMeasures(list))} · 人民币</small></span>
+              <span className="list-nav-copy"><strong>{list.name}</strong><small>{measureSummary(list)} · 人民币</small></span>
             </button>
           ))}
           {!loading && lists.length === 0 && <p className="sidebar-empty">还没有清单。<br />从一箱水开始也很好。</p>}
@@ -256,7 +264,7 @@ export function App(): React.JSX.Element {
                 <div className="eyebrow">当前清单</div>
                 <h1>{selectedList.name}</h1>
                 <div className="header-badges">
-                  <span>{measureSummary(normalizedListMeasures(selectedList))}</span>
+                  <span>{measureSummary(selectedList)}</span>
                   <span>人民币</span>
                   <span>{currentCards.length} 张卡片</span>
                 </div>
@@ -326,10 +334,8 @@ function PriceBoard({ list, cards, loading, onAdd, onEdit, onDelete, onReorder }
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
   const [activeId, setActiveId] = useState<string | null>(null)
-  const selectedMeasureKinds = normalizedListMeasures(list)
-  const lowestIdsByMeasure = useMemo(() => {
-    return new Map(selectedMeasureKinds.map((measureKind) => [measureKind, findLowestCardIds(cards, measureKind)]))
-  }, [cards, selectedMeasureKinds])
+  const measureKind = activeMeasureKind(list)
+  const lowestIds = useMemo(() => findLowestCardIds(cards, measureKind), [cards, measureKind])
   const activeCard = cards.find((card) => card.id === activeId) ?? null
 
   const handleDragEnd = (event: DragEndEvent): void => {
@@ -364,13 +370,13 @@ function PriceBoard({ list, cards, loading, onAdd, onEdit, onDelete, onReorder }
                 key={card.id}
                 card={card}
                 list={list}
-                lowestIdsByMeasure={lowestIdsByMeasure}
+                lowest={lowestIds.has(card.id)}
                 onEdit={() => onEdit(card)}
                 onDelete={() => onDelete(card)}
               />
             ))}
           </SortableContext>
-          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowestIdsByMeasure={lowestIdsByMeasure} overlay />}</DragOverlay>
+          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} overlay />}</DragOverlay>
         </DndContext>
       )}
       {cards.length > 0 && (
@@ -392,27 +398,23 @@ function SortablePriceCard(props: Omit<PriceCardViewProps, 'dragHandle' | 'overl
 interface PriceCardViewProps {
   card: PriceCard
   list: ComparisonList
-  lowestIdsByMeasure: Map<MeasureKind, Set<string>>
+  lowest: boolean
   overlay?: boolean
   dragHandle?: React.ButtonHTMLAttributes<HTMLButtonElement>
   onEdit?(): void
   onDelete?(): void
 }
 
-function PriceCardView({ card, list, lowestIdsByMeasure, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
+function PriceCardView({ card, list, lowest, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
+  const measureKind = activeMeasureKind(list)
   const countResult = calculatePrice(card, 'count')
   const specs = contentSpec(card, list)
-  const results = normalizedListMeasures(list).map((measureKind) => ({
-    measureKind,
-    result: tryCalculatePrice(card, measureKind),
-    lowest: lowestIdsByMeasure.get(measureKind)?.has(card.id) ?? false
-  }))
-  const hasLowest = results.some((entry) => entry.lowest)
+  const result = tryCalculatePrice(card, measureKind)
   return (
-    <article className={`price-card ${hasLowest ? 'lowest' : ''} ${overlay ? 'overlay-card' : ''}`}>
+    <article className={`price-card ${lowest ? 'lowest' : ''} ${overlay ? 'overlay-card' : ''}`}>
       <div className="card-topline">
         <button className="drag-handle" aria-label={`拖动${card.name}`} title="拖动改变位置" {...dragHandle}>⠿</button>
-        {hasLowest ? <span className="lowest-badge">有最低项</span> : <span />}
+        {lowest ? <span className="lowest-badge">当前最低</span> : <span />}
         {!overlay && <button className="more-button" aria-label={`编辑${card.name}`} onClick={onEdit}>•••</button>}
       </div>
       <div className="card-title"><h2>{card.name}</h2><strong>{formatCurrency(card.totalPrice, list.currencyCode)}</strong></div>
@@ -424,26 +426,26 @@ function PriceCardView({ card, list, lowestIdsByMeasure, overlay, dragHandle, on
       <dl className="card-details">
         <div><dt>总件数</dt><dd>{formatDecimal(countResult.totalUnits)} 件</dd></div>
         <div><dt>基础每件价</dt><dd>{formatCurrency(countResult.pricePerUnit, list.currencyCode, true)}</dd></div>
+        <div><dt>有效成分</dt><dd>{card.activeIngredientPercent ? formatPercent(card.activeIngredientPercent) : '—'}</dd></div>
+        <div><dt>倍率</dt><dd>{card.absorptionMultiplier ? formatMultiplier(card.absorptionMultiplier) : '—'}</dd></div>
         <div><dt>购买商家</dt><dd>{card.merchant || '—'}</dd></div>
         <div className="note-row"><dt>备注</dt><dd title={card.note ?? undefined}>{card.note || '—'}</dd></div>
       </dl>
       <div className="unit-price-list">
-        {results.map(({ measureKind, result, lowest }) => (
-          <div key={measureKind} className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
-            <span>{unitPriceTitle(measureKind)}{lowest && <em>最低</em>}</span>
-            {result ? (
-              <>
-                <strong>{formatCurrency(result.normalizedPrice, list.currencyCode, true)}</strong>
-                <small>/ {result.normalizedUnitLabel}</small>
-              </>
-            ) : (
-              <>
-                <strong>待补充</strong>
-                <small>{measureKind === 'volume' ? '需要容量' : '需要重量'}</small>
-              </>
-            )}
-          </div>
-        ))}
+        <div className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
+          <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind)}{lowest && <em>最低</em>}</span>
+          {result ? (
+            <>
+              <strong>{formatCurrency(result.normalizedPrice, list.currencyCode, true)}</strong>
+              <small>/ {result.adjusted ? `有效 ${result.normalizedUnitLabel}` : result.normalizedUnitLabel}</small>
+            </>
+          ) : (
+            <>
+              <strong>待补充</strong>
+              <small>{measureKind === 'volume' ? '需要容量' : '需要重量'}</small>
+            </>
+          )}
+        </div>
       </div>
       {!overlay && (
         <div className="card-actions">
@@ -464,28 +466,15 @@ interface ListDialogProps {
 
 function ListDialog({ list, hasCards, onClose, onSaved }: ListDialogProps): React.JSX.Element {
   const [name, setName] = useState(list?.name ?? '')
-  const [selectedMeasures, setSelectedMeasures] = useState<MeasureKind[]>(list ? normalizedListMeasures(list) : ['count', 'volume'])
+  const [selectedMeasure, setSelectedMeasure] = useState<MeasureKind>(list ? activeMeasureKind(list) : 'volume')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const toggleMeasure = (measureKind: MeasureKind): void => {
-    setSelectedMeasures((current) => {
-      const next = current.includes(measureKind)
-        ? current.filter((kind) => kind !== measureKind)
-        : [...current, measureKind]
-      return measureOrder.filter((kind) => next.includes(kind))
-    })
-  }
-
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
-    if (selectedMeasures.length === 0) {
-      setError('至少选择一种对比条件')
-      return
-    }
     setSaving(true)
     setError(null)
-    const draft: ComparisonListDraft = { name, measureKinds: selectedMeasures, currencyCode: fixedCurrencyCode }
+    const draft: ComparisonListDraft = { name, measureKind: selectedMeasure, measureKinds: [selectedMeasure], currencyCode: fixedCurrencyCode }
     try {
       const saved = list
         ? await window.compareApi.lists.update(list.id, draft)
@@ -508,16 +497,16 @@ function ListDialog({ list, hasCards, onClose, onSaved }: ListDialogProps): Reac
             <legend>比较基准</legend>
             <div className="segmented">
               {measureOrder.map((kind) => (
-                <label key={kind} className={selectedMeasures.includes(kind) ? 'selected' : ''}>
-                  <input type="checkbox" name="measure" value={kind} checked={selectedMeasures.includes(kind)} onChange={() => toggleMeasure(kind)} />
+                <label key={kind} className={selectedMeasure === kind ? 'selected' : ''}>
+                  <input type="radio" name="measure" value={kind} checked={selectedMeasure === kind} onChange={() => setSelectedMeasure(kind)} />
                   {SHORT_MEASURE_LABELS[kind]}
                 </label>
               ))}
             </div>
-            <small>可多选。比如矿泉水可以同时看“每瓶”和“每升”。</small>
+            <small>每个清单只使用一种比较基准；需要另一种算法时，可以新建一个清单。</small>
           </fieldset>
           <p className="field-hint">暂时固定使用人民币（CNY），这里先不需要填写货币代码。</p>
-          {hasCards && <p className="field-hint">提示：如果新增容量或重量条件，已有卡片可能需要编辑补充规格。</p>}
+          {hasCards && <p className="field-hint">提示：修改比较基准后，已有卡片可能需要编辑补充对应规格。</p>}
           {error && <p className="form-error">{error}</p>}
           <div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={saving}>{saving ? '保存中…' : '保存清单'}</button></div>
         </form>
@@ -542,11 +531,14 @@ interface CardFormState {
   volumeUnit: VolumeUnit | ''
   weightPerUnit: string
   weightUnit: WeightUnit | ''
+  activeIngredientPercent: string
+  absorptionMultiplier: string
   merchant: string
   note: string
 }
 
 function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JSX.Element {
+  const measureKind = activeMeasureKind(list)
   const defaultVolumeUnit: VolumeUnit | '' = hasMeasure(list, 'volume') ? 'ml' : ''
   const defaultWeightUnit: WeightUnit | '' = hasMeasure(list, 'weight') ? 'g' : ''
   const [form, setForm] = useState<CardFormState>({
@@ -558,6 +550,8 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
     volumeUnit: card?.volumeUnit ?? ((card?.contentUnit === 'ml' || card?.contentUnit === 'L') ? card.contentUnit : defaultVolumeUnit),
     weightPerUnit: card?.weightPerUnit ?? ((card?.contentUnit === 'g' || card?.contentUnit === 'kg') ? card.contentPerUnit ?? '' : ''),
     weightUnit: card?.weightUnit ?? ((card?.contentUnit === 'g' || card?.contentUnit === 'kg') ? card.contentUnit : defaultWeightUnit),
+    activeIngredientPercent: card?.activeIngredientPercent ?? '',
+    absorptionMultiplier: card?.absorptionMultiplier ?? '',
     merchant: card?.merchant ?? '',
     note: card?.note ?? ''
   })
@@ -576,15 +570,14 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
     volumeUnit: hasMeasure(list, 'volume') ? form.volumeUnit as VolumeUnit : null,
     weightPerUnit: hasMeasure(list, 'weight') ? form.weightPerUnit : null,
     weightUnit: hasMeasure(list, 'weight') ? form.weightUnit as WeightUnit : null,
+    activeIngredientPercent: form.activeIngredientPercent || null,
+    absorptionMultiplier: form.absorptionMultiplier || null,
     merchant: form.merchant || null,
     note: form.note || null,
     source: card?.source ?? 'manual'
   }
-  const previewRows = normalizedListMeasures(list).map((measureKind) => ({
-    measureKind,
-    result: tryCalculatePrice(draft, measureKind)
-  }))
-  const previewReady = previewRows.every((row) => row.result)
+  const preview = tryCalculatePrice(draft, measureKind)
+  const previewReady = Boolean(preview)
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -619,13 +612,16 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
           {hasMeasure(list, 'weight') && (
             <label className="field"><span>每件重量</span><div className="input-with-select"><input type="number" min="0" step="any" value={form.weightPerUnit} onChange={(event) => update('weightPerUnit', event.target.value)} placeholder="500" required /><select value={form.weightUnit} onChange={(event) => update('weightUnit', event.target.value)}><option>g</option><option>kg</option></select></div><small>用于计算每千克价格</small></label>
           )}
+          <div className="field-row">
+            <label className="field"><span>有效成分占比 <em>选填</em></span><div className="input-with-suffix"><input type="number" min="0" max="100" step="any" value={form.activeIngredientPercent} onChange={(event) => update('activeIngredientPercent', event.target.value)} placeholder="100" /><span>%</span></div><small>例如鱼油 DHA+EPA 72%，就填 72</small></label>
+            <label className="field"><span>倍率 <em>选填</em></span><input type="number" min="0" step="any" value={form.absorptionMultiplier} onChange={(event) => update('absorptionMultiplier', event.target.value)} placeholder="1" /><small>例如 rTG 填 1，EE 可填 0.65</small></label>
+          </div>
           <div className={`live-preview ${previewReady ? 'ready' : ''}`}>
             <span>实时计算</span>
-            {previewRows.some((row) => row.result) ? (
+            {preview ? (
               <div>
-                {previewRows.map(({ measureKind, result }) => (
-                  <p key={measureKind}><small>{unitPriceTitle(measureKind)}</small><strong>{result ? `${formatCurrency(result.normalizedPrice, list.currencyCode, true)} / ${result.normalizedUnitLabel}` : '待补充'}</strong></p>
-                ))}
+                <p><small>{unitPriceTitle(measureKind)}</small><strong>{formatCurrency(preview.baseNormalizedPrice, list.currencyCode, true)} / {preview.normalizedUnitLabel}</strong></p>
+                <p><small>{preview.adjusted ? '有效单价' : '对比单价'}</small><strong>{formatCurrency(preview.normalizedPrice, list.currencyCode, true)} / {preview.adjusted ? `有效 ${preview.normalizedUnitLabel}` : preview.normalizedUnitLabel}</strong></p>
               </div>
             ) : <p>填写完整规格后，这里会自动显示单价。</p>}
           </div>

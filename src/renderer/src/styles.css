@@ -145,6 +145,9 @@ h1, h2, p { margin-top: 0; }
 .input-with-prefix { display: grid; grid-template-columns: auto 1fr; align-items: center; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
 .input-with-prefix > span { padding-left: 12px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .input-with-prefix input { border: 0; }
+.input-with-suffix { display: grid; grid-template-columns: 1fr auto; align-items: center; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+.input-with-suffix > span { padding-right: 12px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.input-with-suffix input { border: 0; }
 .input-with-select { display: grid; grid-template-columns: 1fr 90px; }
 .input-with-select input { border-radius: 10px 0 0 10px; }
 .input-with-select select { border-left: 0; border-radius: 0 10px 10px 0; }

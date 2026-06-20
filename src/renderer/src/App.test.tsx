@@ -47,13 +47,29 @@ describe('App', () => {
     expect(screen.queryByLabelText('货币代码')).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('清单名称'), { target: { value: '矿泉水' } })
     fireEvent.click(screen.getByText('保存清单'))
-    await waitFor(() => expect(api.lists.create).toHaveBeenCalledWith({ name: '矿泉水', measureKinds: ['count', 'volume'], currencyCode: 'CNY' }))
+    await waitFor(() => expect(api.lists.create).toHaveBeenCalledWith({ name: '矿泉水', measureKind: 'volume', measureKinds: ['volume'], currencyCode: 'CNY' }))
     expect(await screen.findByRole('heading', { name: '矿泉水' })).toBeInTheDocument()
   })
 
-  it('多条件清单会同时展示每件和每升单价', async () => {
+  it('清单设置读取当前基准，新建清单使用默认容量', async () => {
     const list: ComparisonList = {
-      id: 'water-list', name: '矿泉水', measureKind: 'count', measureKinds: ['count', 'volume'],
+      id: 'count-list', name: '抽纸', measureKind: 'count', measureKinds: ['count'],
+      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }
+    lists.push(list)
+
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '抽纸' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '清单设置' }))
+    expect(screen.getByLabelText('件数')).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    fireEvent.click(screen.getByLabelText('新建清单'))
+    expect(screen.getByLabelText('容量')).toBeChecked()
+  })
+
+  it('容量清单展示每升单价', async () => {
+    const list: ComparisonList = {
+      id: 'water-list', name: '矿泉水', measureKind: 'volume', measureKinds: ['volume'],
       currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }
     lists.push(list)
@@ -61,13 +77,13 @@ describe('App', () => {
       id: 'water-card', listId: list.id, name: '测试水 550ml', totalPrice: '48',
       packageCount: 2, unitsPerPackage: 24, contentPerUnit: '550', contentUnit: 'ml',
       volumePerUnit: '550', volumeUnit: 'ml', weightPerUnit: null, weightUnit: null,
+      activeIngredientPercent: null, absorptionMultiplier: null,
       merchant: null, note: null, source: 'manual', sortIndex: 0,
       createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }])
 
     render(<App />)
     expect(await screen.findByRole('heading', { name: '测试水 550ml' })).toBeInTheDocument()
-    expect(screen.getByText('每件 / 每瓶')).toBeInTheDocument()
     expect(screen.getByText('每升')).toBeInTheDocument()
     expect(screen.getByText(/1\.8182/)).toBeInTheDocument()
   })
@@ -90,6 +106,7 @@ describe('App', () => {
           id: 'count-card', listId: countList.id, name: '六包装抽纸', totalPrice: '19.9',
           packageCount: 1, unitsPerPackage: 6, contentPerUnit: null, contentUnit: null,
           volumePerUnit: null, volumeUnit: null, weightPerUnit: null, weightUnit: null,
+          activeIngredientPercent: null, absorptionMultiplier: null,
           merchant: null, note: null, source: 'manual', sortIndex: 0,
           createdAt: '2026-01-01', updatedAt: '2026-01-01'
         }]

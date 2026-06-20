@@ -30,7 +30,7 @@ function positiveInteger(value: number, label: string): Decimal {
 }
 
 export function calculatePrice(
-  value: Pick<CardDraft, 'totalPrice' | 'packageCount' | 'unitsPerPackage' | 'contentPerUnit' | 'contentUnit' | 'volumePerUnit' | 'volumeUnit' | 'weightPerUnit' | 'weightUnit'>,
+  value: Pick<CardDraft, 'totalPrice' | 'packageCount' | 'unitsPerPackage' | 'contentPerUnit' | 'contentUnit' | 'volumePerUnit' | 'volumeUnit' | 'weightPerUnit' | 'weightUnit' | 'activeIngredientPercent' | 'absorptionMultiplier'>,
   measureKind: MeasureKind
 ): PriceCalculation {
   const totalPrice = positiveDecimal(value.totalPrice, '总价')
@@ -60,13 +60,30 @@ export function calculatePrice(
     normalizedQuantity = totalUnits.mul(kilograms)
   }
 
+  const activeIngredientPercent = optionalPositiveDecimal(value.activeIngredientPercent, '有效成分占比') ?? new Decimal(100)
+  if (activeIngredientPercent.gt(100)) throw new ValidationError('有效成分占比不能超过 100%')
+  const absorptionMultiplier = optionalPositiveDecimal(value.absorptionMultiplier, '倍率') ?? new Decimal(1)
+  const adjustmentFactor = activeIngredientPercent.div(100).mul(absorptionMultiplier)
+  const effectiveQuantity = normalizedQuantity.mul(adjustmentFactor)
+  const baseNormalizedPrice = totalPrice.div(normalizedQuantity)
+  const normalizedPrice = totalPrice.div(effectiveQuantity)
+
   return {
     totalUnits: totalUnits.toString(),
     normalizedQuantity: normalizedQuantity.toString(),
+    effectiveQuantity: effectiveQuantity.toString(),
     pricePerUnit: pricePerUnit.toString(),
-    normalizedPrice: totalPrice.div(normalizedQuantity).toString(),
+    baseNormalizedPrice: baseNormalizedPrice.toString(),
+    normalizedPrice: normalizedPrice.toString(),
+    adjustmentFactor: adjustmentFactor.toString(),
+    adjusted: !adjustmentFactor.eq(1),
     normalizedUnitLabel: NORMALIZED_UNIT_LABELS[measureKind]
   }
+}
+
+function optionalPositiveDecimal(value: string | null | undefined, label: string): Decimal | null {
+  if (value == null || String(value).trim() === '') return null
+  return positiveDecimal(String(value).trim(), label)
 }
 
 function resolveVolumeUnit(value: Pick<CardDraft, 'contentUnit' | 'volumeUnit'>): VolumeUnit | null {
@@ -94,7 +111,7 @@ function resolveWeightPerUnit(value: Pick<CardDraft, 'contentPerUnit' | 'content
 }
 
 export function tryCalculatePrice(
-  value: Pick<CardDraft, 'totalPrice' | 'packageCount' | 'unitsPerPackage' | 'contentPerUnit' | 'contentUnit' | 'volumePerUnit' | 'volumeUnit' | 'weightPerUnit' | 'weightUnit'>,
+  value: Pick<CardDraft, 'totalPrice' | 'packageCount' | 'unitsPerPackage' | 'contentPerUnit' | 'contentUnit' | 'volumePerUnit' | 'volumeUnit' | 'weightPerUnit' | 'weightUnit' | 'activeIngredientPercent' | 'absorptionMultiplier'>,
   measureKind: MeasureKind
 ): PriceCalculation | null {
   try {

@@ -10,9 +10,9 @@ import type {
   WeightUnit
 } from '../shared/types'
 import { calculatePrice, normalizePositiveDecimal, ValidationError } from '../shared/calculator'
+import Decimal from 'decimal.js'
 
 const measureKinds = new Set<MeasureKind>(['count', 'volume', 'weight'])
-const measureOrder: MeasureKind[] = ['count', 'volume', 'weight']
 const sources = new Set<InputSource>(['manual', 'ocr'])
 
 function requiredText(value: unknown, label: string): string {
@@ -30,18 +30,19 @@ function optionalText(value: unknown, label: string): string | null {
 
 export function validateListDraft(value: ComparisonListDraft): ComparisonListDraft {
   const name = requiredText(value?.name, '清单名称')
-  const normalizedMeasureKinds = normalizeMeasureKinds(value)
+  const measureKind = normalizeMeasureKind(value)
   return {
     name,
-    measureKind: normalizedMeasureKinds[0],
-    measureKinds: normalizedMeasureKinds,
+    measureKind,
+    measureKinds: [measureKind],
     // 首版暂时固定人民币。保留字段是为了兼容旧数据和备份格式。
     currencyCode: 'CNY'
   }
 }
 
 export function validateCardDraft(value: CardDraft, selectedMeasureKinds: MeasureKind | MeasureKind[]): CardDraft {
-  const selected = Array.isArray(selectedMeasureKinds) ? selectedMeasureKinds : [selectedMeasureKinds]
+  const selected = Array.isArray(selectedMeasureKinds) ? selectedMeasureKinds[0] : selectedMeasureKinds
+  if (!measureKinds.has(selected)) throw new ValidationError('计量方式不正确')
   const draft: CardDraft = {
     name: requiredText(value?.name, '商品名称'),
     totalPrice: normalizePositiveDecimal(String(value?.totalPrice ?? ''), '总价'),
@@ -53,19 +54,21 @@ export function validateCardDraft(value: CardDraft, selectedMeasureKinds: Measur
     volumeUnit: normalizeLegacyContent(value, 'volume').unit as VolumeUnit | null,
     weightPerUnit: normalizeLegacyContent(value, 'weight').perUnit,
     weightUnit: normalizeLegacyContent(value, 'weight').unit as WeightUnit | null,
+    activeIngredientPercent: normalizeOptionalPositiveDecimal(value?.activeIngredientPercent, '有效成分占比', 100),
+    absorptionMultiplier: normalizeOptionalPositiveDecimal(value?.absorptionMultiplier, '倍率'),
     merchant: optionalText(value?.merchant, '购买商家'),
     note: optionalText(value?.note, '备注'),
     source: value?.source as InputSource
   }
   if (!sources.has(draft.source)) throw new ValidationError('录入来源不正确')
-  selected.forEach((measureKind) => calculatePrice(draft, measureKind))
-  if (selected.includes('volume')) {
+  calculatePrice(draft, selected)
+  if (selected === 'volume') {
     draft.volumePerUnit = normalizePositiveDecimal(draft.volumePerUnit ?? '', '每件容量')
   } else {
     draft.volumePerUnit = null
     draft.volumeUnit = null
   }
-  if (selected.includes('weight')) {
+  if (selected === 'weight') {
     draft.weightPerUnit = normalizePositiveDecimal(draft.weightPerUnit ?? '', '每件重量')
   } else {
     draft.weightPerUnit = null
@@ -84,19 +87,18 @@ export function validateCardDraft(value: CardDraft, selectedMeasureKinds: Measur
   return draft
 }
 
-function normalizeMeasureKinds(value: ComparisonListDraft): MeasureKind[] {
-  const raw = Array.isArray(value?.measureKinds)
-    ? value.measureKinds
-    : value?.measureKind
-      ? [value.measureKind]
-      : ['count', 'volume']
-  const selected = new Set<MeasureKind>()
-  raw.forEach((kind) => {
-    if (!measureKinds.has(kind)) throw new ValidationError('计量方式不正确')
-    selected.add(kind)
-  })
-  const normalized = measureOrder.filter((kind) => selected.has(kind))
-  if (normalized.length === 0) throw new ValidationError('至少选择一种对比条件')
+function normalizeMeasureKind(value: ComparisonListDraft): MeasureKind {
+  const raw = value?.measureKind ?? value?.measureKinds?.[0] ?? 'volume'
+  if (!measureKinds.has(raw)) throw new ValidationError('计量方式不正确')
+  return raw
+}
+
+function normalizeOptionalPositiveDecimal(value: unknown, label: string, max?: number): string | null {
+  if (value == null || value === '') return null
+  const normalized = normalizePositiveDecimal(String(value), label)
+  if (max != null && new Decimal(normalized).gt(max)) {
+    throw new ValidationError(`${label}不能超过 ${max}%`)
+  }
   return normalized
 }
 
@@ -151,7 +153,7 @@ export function validateBackupSnapshot(value: unknown): BackupSnapshot {
     const list = listById.get(card.listId)
     if (!list) throw new ValidationError('备份中存在未归属清单的卡片')
     if (!Number.isSafeInteger(card.sortIndex) || card.sortIndex < 0) throw new ValidationError('备份中的卡片顺序无效')
-    return { ...card, ...validateCardDraft(card, list.measureKinds) }
+    return { ...card, ...validateCardDraft(card, list.measureKind) }
   })
 
   return {
