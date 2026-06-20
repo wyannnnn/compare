@@ -85,12 +85,17 @@ describe('App', () => {
       merchant: null, note: null, source: 'manual', sortIndex: 0,
       createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }])
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
 
     render(<App />)
     expect(await screen.findByRole('heading', { name: '测试水 550ml' })).toBeInTheDocument()
     expect(screen.getAllByText('每升').length).toBeGreaterThan(0)
     expect(screen.getByText('/ L')).toBeInTheDocument()
     expect(screen.getByText(/1\.8182/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /复制单价/ }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/^¥1\.8182 \/ L$/)))
+    expect(screen.getByText('已复制单价')).toBeInTheDocument()
     const toggle = screen.getByLabelText('切换 L/ml 显示')
     expect(toggle).toHaveAttribute('title', 'L/ml 切换')
     fireEvent.click(toggle)
@@ -123,6 +128,36 @@ describe('App', () => {
     expect(screen.queryByText(/EE 可填/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('启用倍率修正'))
     expect(screen.getByText(/EE 可填/)).toBeInTheDocument()
+  })
+
+  it('价格卡默认紧凑，展开后显示额外详情', async () => {
+    const list: ComparisonList = {
+      id: 'detail-list', name: '鱼油', measureKind: 'weight', measureKinds: ['weight'],
+      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }
+    lists.push(list)
+    vi.mocked(api.cards.getAll).mockResolvedValue([{
+      id: 'detail-card', listId: list.id, name: '鱼油详情卡', totalPrice: '132',
+      packageCount: 1, unitsPerPackage: 1, contentPerUnit: '70.5', contentUnit: 'g',
+      volumePerUnit: null, volumeUnit: null, weightPerUnit: '70.5', weightUnit: 'g',
+      activeIngredientPercent: '72', absorptionMultiplier: '1',
+      merchant: '京东', note: 'rTG 版本', source: 'manual', sortIndex: 0,
+      createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }])
+
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '鱼油详情卡' })).toBeInTheDocument()
+    expect(screen.queryByText('有效成分')).not.toBeInTheDocument()
+    expect(screen.queryByText('倍率')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /展开详情/ }))
+    expect(screen.getByText('有效成分')).toBeInTheDocument()
+    expect(screen.getByText('72%')).toBeInTheDocument()
+    expect(screen.getByText('倍率')).toBeInTheDocument()
+    expect(screen.getByText('1 倍')).toBeInTheDocument()
+    expect(screen.getByText('京东')).toBeInTheDocument()
+    expect(screen.getByText('rTG 版本')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '收起详情' }))
+    expect(screen.queryByText('有效成分')).not.toBeInTheDocument()
   })
 
   it('重量单价可以点击在 kg 和 g 之间切换展示', async () => {

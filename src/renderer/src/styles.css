@@ -71,11 +71,11 @@ h1, h2, p { margin-top: 0; }
 .primary-button.large { min-height: 46px; padding-inline: 22px; font-size: 14px; }
 
 .board-scroll { display: flex; min-height: 0; flex: 1; align-items: flex-start; gap: 16px; padding: 8px 34px 38px; overflow-x: auto; overflow-y: hidden; scroll-padding: 34px; }
-.sortable { flex: 0 0 304px; height: 100%; max-height: 570px; }
+.sortable { flex: 0 0 304px; min-height: 420px; }
 .sortable.dragging { opacity: .28; }
-.price-card { display: flex; width: 304px; height: 100%; max-height: 570px; flex-direction: column; padding: 14px 16px 16px; overflow-x: hidden; overflow-y: auto; border: 1px solid var(--border); border-radius: 18px; background: var(--card); box-shadow: 0 4px 15px rgba(42, 44, 38, .05); scrollbar-width: thin; }
+.price-card { display: flex; width: 304px; min-height: 420px; flex-direction: column; padding: 14px 16px 16px; overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--card); box-shadow: 0 4px 15px rgba(42, 44, 38, .05); }
 .price-card.lowest { border-color: #8bc2a9; box-shadow: 0 0 0 1px #9dd0b7, 0 12px 32px rgba(34, 108, 81, .1); }
-.overlay-card { height: 550px; box-shadow: var(--shadow); transform: rotate(1.5deg); }
+.overlay-card { min-height: 550px; box-shadow: var(--shadow); transform: rotate(1.5deg); }
 .card-topline { display: grid; grid-template-columns: 32px 1fr 32px; align-items: center; min-height: 32px; }
 .drag-handle, .more-button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; color: #999c93; background: transparent; cursor: grab; font-size: 19px; touch-action: none; }
 .drag-handle:active { cursor: grabbing; }
@@ -83,7 +83,7 @@ h1, h2, p { margin-top: 0; }
 .more-button { cursor: pointer; font-size: 14px; letter-spacing: 1px; }
 .lowest-badge { justify-self: center; padding: 5px 10px; border-radius: 20px; color: var(--accent); background: var(--accent-soft); font-size: 11px; font-weight: 800; }
 .card-title { padding: 13px 3px 15px; }
-.card-title h2 { min-height: 44px; margin-bottom: 5px; overflow: hidden; font-size: 18px; line-height: 1.25; }
+.card-title h2 { display: -webkit-box; min-height: 44px; margin-bottom: 5px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 18px; line-height: 1.25; }
 .card-title > strong { font-size: 27px; letter-spacing: -.03em; }
 .spec-box { display: flex; flex-direction: column; gap: 5px; padding: 12px 13px; border-radius: 12px; background: var(--soft); }
 .spec-box span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
@@ -94,8 +94,12 @@ h1, h2, p { margin-top: 0; }
 .card-details dt { flex: 0 0 auto; color: var(--muted); }
 .card-details dd { margin: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .note-row dd { max-width: 172px; }
+.details-toggle { align-self: flex-start; margin: 9px 2px 0; padding: 5px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); background: transparent; cursor: pointer; font-size: 11px; font-weight: 700; }
+.details-toggle:hover { border-color: #9dd0b7; color: var(--accent); background: var(--accent-soft); }
 .unit-price-list { display: flex; flex-direction: column; gap: 7px; margin-top: auto; padding: 13px 3px 11px; }
-.unit-price { display: grid; grid-template-columns: 1fr auto auto auto; align-items: baseline; gap: 4px; padding: 9px 10px; border: 1px solid transparent; border-radius: 12px; background: color-mix(in srgb, var(--soft) 55%, transparent); }
+.unit-price { display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 4px; padding: 9px 10px; border: 1px solid transparent; border-radius: 12px; background: color-mix(in srgb, var(--soft) 55%, transparent); }
+.unit-copy-button { display: inline-grid; grid-template-columns: auto auto; align-items: baseline; gap: 4px; padding: 0; border: 0; color: inherit; background: transparent; cursor: copy; }
+.unit-copy-button:hover strong, .unit-copy-button:hover small { text-decoration: underline; text-underline-offset: 3px; }
 .unit-switch-button { margin-left: 4px; padding: 3px 6px; border: 1px solid #9dd0b7; border-radius: 999px; color: var(--accent); background: color-mix(in srgb, white 55%, transparent); cursor: pointer; font-size: 10px; font-weight: 800; }
 .unit-switch-button:hover { background: var(--accent); color: white; }
 .unit-price.lowest-unit { border-color: #9dd0b7; background: var(--accent-soft); }

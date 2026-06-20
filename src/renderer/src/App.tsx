@@ -32,7 +32,7 @@ import {
   type WeightUnit
 } from '../../shared/types'
 
-const logoUrl = new URL('./assets/logo.svg', import.meta.url).href
+const logoUrl = new URL('./assets/logo.png', import.meta.url).href
 const measureOrder: MeasureKind[] = ['count', 'volume', 'weight']
 const fixedCurrencyCode = 'CNY'
 type DisplayUnit = 'L' | 'ml' | 'kg' | 'g'
@@ -54,6 +54,24 @@ function formatCurrency(value: string, currency: string, unitPrice = false): str
 
 function formatDecimal(value: string): string {
   return new Decimal(value).toDecimalPlaces(4).toString()
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand?.('copy') ?? false
+  document.body.removeChild(textarea)
+  if (!copied) throw new Error('Clipboard copy failed')
 }
 
 function Icon({ children }: { children: React.ReactNode }): React.JSX.Element {
@@ -155,6 +173,15 @@ export function App(): React.JSX.Element {
     setNotice(message)
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current)
     noticeTimer.current = window.setTimeout(() => setNotice(null), 3800)
+  }
+
+  const copyUnitPrice = async (text: string): Promise<void> => {
+    try {
+      await copyTextToClipboard(text)
+      showNotice('已复制单价')
+    } catch {
+      showNotice('复制失败，请手动选择复制')
+    }
   }
 
   useEffect(() => {
@@ -342,6 +369,7 @@ export function App(): React.JSX.Element {
               onAdd={() => setDrawerCard('new')}
               onEdit={setDrawerCard}
               onDelete={deleteCard}
+              onCopyUnitPrice={(text) => { void copyUnitPrice(text) }}
               onReorder={reorderCards}
             />
           </>
@@ -387,10 +415,11 @@ interface PriceBoardProps {
   onAdd(): void
   onEdit(card: PriceCard): void
   onDelete(card: PriceCard): void
+  onCopyUnitPrice(text: string): void
   onReorder(cards: PriceCard[]): void
 }
 
-function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, onAdd, onEdit, onDelete, onReorder }: PriceBoardProps): React.JSX.Element {
+function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, onAdd, onEdit, onDelete, onCopyUnitPrice, onReorder }: PriceBoardProps): React.JSX.Element {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -443,10 +472,11 @@ function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, on
                 onToggleDisplayUnit={onToggleDisplayUnit}
                 onEdit={() => onEdit(card)}
                 onDelete={() => onDelete(card)}
+                onCopyUnitPrice={onCopyUnitPrice}
               />
             ))}
           </SortableContext>
-          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} displayUnit={displayUnit} onToggleDisplayUnit={onToggleDisplayUnit} overlay />}</DragOverlay>
+          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} displayUnit={displayUnit} onToggleDisplayUnit={onToggleDisplayUnit} onCopyUnitPrice={onCopyUnitPrice} overlay />}</DragOverlay>
         </DndContext>
       )}
       {cards.length > 0 && (
@@ -471,21 +501,32 @@ interface PriceCardViewProps {
   lowest: boolean
   displayUnit: DisplayUnit | null
   onToggleDisplayUnit(): void
+  onCopyUnitPrice(text: string): void
   overlay?: boolean
   dragHandle?: React.ButtonHTMLAttributes<HTMLButtonElement>
   onEdit?(): void
   onDelete?(): void
 }
 
-function PriceCardView({ card, list, lowest, displayUnit, onToggleDisplayUnit, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
+function PriceCardView({ card, list, lowest, displayUnit, onToggleDisplayUnit, onCopyUnitPrice, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
+  const [detailsExpanded, setDetailsExpanded] = useState(false)
   const measureKind = activeMeasureKind(list)
   const countResult = calculatePrice(card, 'count')
   const specs = contentSpec(card, list)
   const result = tryCalculatePrice(card, measureKind)
   const display = result ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, displayUnit) : null
   const switchLabel = result ? displayUnitSwitchLabel(measureKind) : null
+  const formattedUnitPrice = display ? formatCurrency(display.value, list.currencyCode, true) : null
+  const copyText = formattedUnitPrice && display ? `${formattedUnitPrice} / ${display.unitLabel}` : null
+  const extraDetailCount = [
+    card.activeIngredientPercent,
+    card.absorptionMultiplier,
+    card.merchant,
+    card.note
+  ].filter(Boolean).length
+  const hasExtraDetails = extraDetailCount > 0
   return (
-    <article className={`price-card ${lowest ? 'lowest' : ''} ${overlay ? 'overlay-card' : ''}`}>
+    <article className={`price-card ${lowest ? 'lowest' : ''} ${detailsExpanded ? 'expanded' : ''} ${overlay ? 'overlay-card' : ''}`}>
       <div className="card-topline">
         <button className="drag-handle" aria-label={`拖动${card.name}`} title="拖动改变位置" {...dragHandle}>⠿</button>
         {lowest ? <span className="lowest-badge">当前最低</span> : <span />}
@@ -500,18 +541,40 @@ function PriceCardView({ card, list, lowest, displayUnit, onToggleDisplayUnit, o
       <dl className="card-details">
         <div><dt>总件数</dt><dd>{formatDecimal(countResult.totalUnits)} 件</dd></div>
         <div><dt>基础每件价</dt><dd>{formatCurrency(countResult.pricePerUnit, list.currencyCode, true)}</dd></div>
-        {card.activeIngredientPercent && <div><dt>有效成分</dt><dd>{formatPercent(card.activeIngredientPercent)}</dd></div>}
-        {card.absorptionMultiplier && <div><dt>倍率</dt><dd>{formatMultiplier(card.absorptionMultiplier)}</dd></div>}
-        <div><dt>购买商家</dt><dd>{card.merchant || '—'}</dd></div>
-        <div className="note-row"><dt>备注</dt><dd title={card.note ?? undefined}>{card.note || '—'}</dd></div>
+        {detailsExpanded && (
+          <>
+            {card.activeIngredientPercent && <div><dt>有效成分</dt><dd>{formatPercent(card.activeIngredientPercent)}</dd></div>}
+            {card.absorptionMultiplier && <div><dt>倍率</dt><dd>{formatMultiplier(card.absorptionMultiplier)}</dd></div>}
+            {card.merchant && <div><dt>购买商家</dt><dd>{card.merchant}</dd></div>}
+            {card.note && <div className="note-row"><dt>备注</dt><dd title={card.note}>{card.note}</dd></div>}
+          </>
+        )}
       </dl>
+      {hasExtraDetails && !overlay && (
+        <button
+          type="button"
+          className="details-toggle"
+          aria-expanded={detailsExpanded}
+          onClick={() => setDetailsExpanded((expanded) => !expanded)}
+        >
+          {detailsExpanded ? '收起详情' : `展开详情（${extraDetailCount}）`}
+        </button>
+      )}
       <div className="unit-price-list">
         <div className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
           <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind, displayUnit)}</span>
           {result && display ? (
             <>
-              <strong>{formatCurrency(display.value, list.currencyCode, true)}</strong>
-              <small>/ {display.unitLabel}</small>
+              <button
+                type="button"
+                className="unit-copy-button"
+                title="点击复制单价"
+                aria-label={`复制单价 ${copyText}`}
+                onClick={() => copyText && onCopyUnitPrice(copyText)}
+              >
+                <strong>{formattedUnitPrice}</strong>
+                <small>/ {display.unitLabel}</small>
+              </button>
               {switchLabel && (
                 <button
                   type="button"
