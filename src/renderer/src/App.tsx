@@ -36,6 +36,9 @@ const logoUrl = new URL('./assets/logo.png', import.meta.url).href
 const measureOrder: MeasureKind[] = ['count', 'volume', 'weight']
 const fixedCurrencyCode = 'CNY'
 type DisplayUnit = 'L' | 'ml' | 'kg' | 'g'
+type DeleteTarget =
+  | { kind: 'list', id: string, name: string }
+  | { kind: 'card', id: string, name: string }
 
 function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) return '操作失败，请稍后重试'
@@ -162,7 +165,10 @@ export function App(): React.JSX.Element {
   const [drawerCard, setDrawerCard] = useState<PriceCard | 'new' | null>(null)
   const [backupMenuOpen, setBackupMenuOpen] = useState(false)
   const [displayUnits, setDisplayUnits] = useState<Record<string, DisplayUnit>>({})
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const noticeTimer = useRef<number | null>(null)
+  const backupMenuRef = useRef<HTMLDivElement | null>(null)
   const selectedList = lists.find((list) => list.id === selectedId) ?? null
   const currentCards = useMemo(
     () => selectedId ? cards.filter((card) => card.listId === selectedId) : [],
@@ -211,6 +217,24 @@ export function App(): React.JSX.Element {
     return () => { active = false }
   }, [selectedId])
 
+  useEffect(() => {
+    if (!backupMenuOpen) return
+
+    const closeOnOutsideClick = (event: MouseEvent): void => {
+      if (!backupMenuRef.current?.contains(event.target as Node)) setBackupMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setBackupMenuOpen(false)
+    }
+
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [backupMenuOpen])
+
   const handleListSaved = (saved: ComparisonList, created: boolean): void => {
     setLists((current) => {
       const withoutSaved = current.filter((item) => item.id !== saved.id)
@@ -222,16 +246,35 @@ export function App(): React.JSX.Element {
     showNotice(created ? '清单已创建' : '清单设置已保存')
   }
 
-  const deleteCurrentList = async (): Promise<void> => {
-    if (!selectedList || !window.confirm(`删除“${selectedList.name}”及其中全部卡片？此操作无法撤销。`)) return
+  const deleteCurrentList = (): void => {
+    if (!selectedList) return
+    setDeleteTarget({ kind: 'list', id: selectedList.id, name: selectedList.name })
+  }
+
+  const deleteCard = (card: PriceCard): void => {
+    setDeleteTarget({ kind: 'card', id: card.id, name: card.name })
+  }
+
+  const confirmDelete = async (): Promise<void> => {
+    if (!deleteTarget || deleting) return
+    setDeleting(true)
     try {
-      await window.compareApi.lists.delete(selectedList.id)
-      const next = lists.filter((item) => item.id !== selectedList.id)
-      setLists(next)
-      setSelectedId(next[0]?.id ?? null)
-      showNotice('清单已删除')
+      if (deleteTarget.kind === 'list') {
+        await window.compareApi.lists.delete(deleteTarget.id)
+        const next = lists.filter((item) => item.id !== deleteTarget.id)
+        setLists(next)
+        setSelectedId(next[0]?.id ?? null)
+        showNotice('清单已删除')
+      } else {
+        await window.compareApi.cards.delete(deleteTarget.id)
+        setCards((current) => current.filter((item) => item.id !== deleteTarget.id).map((item, index) => ({ ...item, sortIndex: index })))
+        showNotice('卡片已删除')
+      }
+      setDeleteTarget(null)
     } catch (error) {
       showNotice(errorMessage(error))
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -241,17 +284,6 @@ export function App(): React.JSX.Element {
     showNotice(created ? '卡片已添加到最右侧' : '卡片已更新')
     if (created) {
       window.setTimeout(() => document.querySelector('.board-scroll')?.scrollTo({ left: 100000, behavior: 'smooth' }), 40)
-    }
-  }
-
-  const deleteCard = async (card: PriceCard): Promise<void> => {
-    if (!window.confirm(`删除“${card.name}”这张卡片？`)) return
-    try {
-      await window.compareApi.cards.delete(card.id)
-      setCards((current) => current.filter((item) => item.id !== card.id).map((item, index) => ({ ...item, sortIndex: index })))
-      showNotice('卡片已删除')
-    } catch (error) {
-      showNotice(errorMessage(error))
     }
   }
 
@@ -319,13 +351,13 @@ export function App(): React.JSX.Element {
                   }}
             >
               <span className="list-dot" />
-              <span className="list-nav-copy"><strong>{list.name}</strong><small>{measureSummary(list)} · 人民币</small></span>
+              <span className="list-nav-copy"><strong>{list.name}</strong><small>{measureSummary(list)}</small></span>
             </button>
           ))}
-          {!loading && lists.length === 0 && <p className="sidebar-empty">还没有清单。<br />从一箱水开始也很好。</p>}
+          {!loading && lists.length === 0 && <p className="sidebar-empty">还没有清单。<br />创建一个清单开始比较吧。</p>}
         </nav>
         <div className="sidebar-footer">
-          <div className="backup-menu">
+          <div className="backup-menu" ref={backupMenuRef}>
             <button className="quiet-button backup-menu-button" aria-expanded={backupMenuOpen} onClick={() => setBackupMenuOpen((open) => !open)}><Icon>⇅</Icon> 备份与恢复</button>
             {backupMenuOpen && (
               <div className="backup-menu-popover" role="menu">
@@ -346,7 +378,6 @@ export function App(): React.JSX.Element {
                 <h1>{selectedList.name}</h1>
                 <div className="header-badges">
                   <span>{measureSummary(selectedList)}</span>
-                  <span>人民币</span>
                   <span>{currentCards.length} 张卡片</span>
                 </div>
               </div>
@@ -378,7 +409,7 @@ export function App(): React.JSX.Element {
             <div className="welcome-art"><span>¥</span><span>÷</span><span>L</span></div>
             <div className="eyebrow">欢迎使用比价卡</div>
             <h1>价格不同，规格也不同？<br />先换成同一个单位再说。</h1>
-            <p>建立一个对比清单，录入包装和价格。每瓶、每升或每千克的真实单价会自动算好。</p>
+            <p>建立一个对比清单，录入商品的价格和规格，系统会自动换算并显示统一单价。</p>
             <button className="primary-button large" onClick={() => setListDialog('create')}>创建第一个清单</button>
           </section>
         )}
@@ -399,6 +430,14 @@ export function App(): React.JSX.Element {
           card={drawerCard === 'new' ? null : drawerCard}
           onClose={() => setDrawerCard(null)}
           onSaved={handleCardSaved}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteConfirmDialog
+          target={deleteTarget}
+          deleting={deleting}
+          onCancel={() => !deleting && setDeleteTarget(null)}
+          onConfirm={() => { void confirmDelete() }}
         />
       )}
       {notice && <div className="toast" role="status">{notice}</div>}
@@ -604,6 +643,33 @@ function PriceCardView({ card, list, lowest, displayUnit, onToggleDisplayUnit, o
   )
 }
 
+interface DeleteConfirmDialogProps {
+  target: DeleteTarget
+  deleting: boolean
+  onCancel(): void
+  onConfirm(): void
+}
+
+function DeleteConfirmDialog({ target, deleting, onCancel, onConfirm }: DeleteConfirmDialogProps): React.JSX.Element {
+  const isList = target.kind === 'list'
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}>
+      <section className="dialog delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description">
+        <div className="delete-dialog-icon" aria-hidden="true">!</div>
+        <div className="delete-dialog-copy">
+          <h2 id="delete-dialog-title">确认删除</h2>
+          <strong className="delete-target" id="delete-dialog-description">{target.name}</strong>
+          <p className="delete-dialog-warning">{isList ? '清单中的全部卡片也会被删除，且无法撤销。' : '删除后无法撤销。'}</p>
+        </div>
+        <div className="dialog-actions delete-dialog-actions">
+          <button type="button" className="secondary-button" disabled={deleting} onClick={onCancel}>取消</button>
+          <button type="button" className="danger-button" disabled={deleting} onClick={onConfirm}>{deleting ? '删除中…' : '确认删除'}</button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 interface ListDialogProps {
   list: ComparisonList | null
   hasCards: boolean
@@ -639,7 +705,7 @@ function ListDialog({ list, hasCards, onClose, onSaved }: ListDialogProps): Reac
       <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="list-dialog-title">
         <div className="dialog-heading"><div><div className="eyebrow">{list ? '清单设置' : '新的对比'}</div><h2 id="list-dialog-title">{list ? '编辑清单' : '创建对比清单'}</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭">×</button></div>
         <form onSubmit={submit}>
-          <label className="field"><span>清单名称</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：矿泉水" required /></label>
+          <label className="field"><span>清单名称</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="输入要比较的商品类别" required /></label>
           <fieldset className="field">
             <legend>比较基准</legend>
             <div className="segmented">
@@ -650,9 +716,8 @@ function ListDialog({ list, hasCards, onClose, onSaved }: ListDialogProps): Reac
                 </label>
               ))}
             </div>
-            <small>每个清单只使用一种比较基准；需要另一种算法时，可以新建一个清单。</small>
+            <small>每个清单只使用一种比较基准；如需按其他指标比较，可以新建清单。</small>
           </fieldset>
-          <p className="field-hint">暂时固定使用人民币（CNY），这里先不需要填写货币代码。</p>
           {hasCards && <p className="field-hint">提示：修改比较基准后，已有卡片可能需要编辑补充对应规格。</p>}
           {error && <p className="form-error">{error}</p>}
           <div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={saving}>{saving ? '保存中…' : '保存清单'}</button></div>
@@ -753,11 +818,11 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
       <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="card-drawer-title">
         <div className="drawer-heading"><div><div className="eyebrow">{card ? '更新报价' : '添加比较项'}</div><h2 id="card-drawer-title">{card ? '编辑价格卡' : '新建价格卡'}</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭">×</button></div>
         <form onSubmit={submit} className="drawer-form">
-          <label className="field"><span>商品名称</span><input autoFocus value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="例如：农夫山泉 550ml" required /></label>
+          <label className="field"><span>商品名称</span><input autoFocus value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="输入商品名称" required /></label>
           <label className="field"><span>总价</span><div className="input-with-prefix"><span>¥</span><input type="number" min="0" step="any" value={form.totalPrice} onChange={(event) => update('totalPrice', event.target.value)} placeholder="0.00" required /></div><small>这里填写以下全部包装合计的价格</small></label>
           <div className="field-row">
-            <label className="field"><span>包装数量</span><input type="number" min="1" step="1" value={form.packageCount} onChange={(event) => update('packageCount', event.target.value)} required /><small>例如 2 箱</small></label>
-            <label className="field"><span>每包装件数</span><input type="number" min="1" step="1" value={form.unitsPerPackage} onChange={(event) => update('unitsPerPackage', event.target.value)} required /><small>例如每箱 24 瓶</small></label>
+            <label className="field"><span>包装数量</span><input type="number" min="1" step="1" value={form.packageCount} onChange={(event) => update('packageCount', event.target.value)} required /><small>本次购买的包装总数</small></label>
+            <label className="field"><span>规格</span><input type="number" min="1" step="1" value={form.unitsPerPackage} onChange={(event) => update('unitsPerPackage', event.target.value)} required /><small>每个包装内含的商品件数</small></label>
           </div>
           {hasMeasure(list, 'volume') && (
             <label className="field"><span>每件容量</span><div className="input-with-select"><input type="number" min="0" step="any" value={form.volumePerUnit} onChange={(event) => update('volumePerUnit', event.target.value)} placeholder="550" required /><select value={form.volumeUnit} onChange={(event) => update('volumeUnit', event.target.value)}><option>ml</option><option>L</option></select></div><small>用于计算每升价格</small></label>
@@ -768,11 +833,11 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
           <div className="optional-adjustments">
             <label className="option-toggle"><input type="checkbox" checked={form.useActiveIngredient} onChange={(event) => update('useActiveIngredient', event.target.checked)} /> 启用有效成分占比</label>
             {form.useActiveIngredient && (
-              <label className="field"><span>有效成分占比</span><div className="input-with-suffix"><input type="number" min="0" max="100" step="any" value={form.activeIngredientPercent} onChange={(event) => update('activeIngredientPercent', event.target.value)} placeholder="72" required /><span>%</span></div><small>例如鱼油 DHA+EPA 72%，就填 72</small></label>
+              <label className="field"><span>有效成分占比</span><div className="input-with-suffix"><input type="number" min="0" max="100" step="any" value={form.activeIngredientPercent} onChange={(event) => update('activeIngredientPercent', event.target.value)} placeholder="百分比" required /><span>%</span></div><small>填写商品标注的有效成分百分比</small></label>
             )}
             <label className="option-toggle"><input type="checkbox" checked={form.useAbsorptionMultiplier} onChange={(event) => update('useAbsorptionMultiplier', event.target.checked)} /> 启用倍率修正</label>
             {form.useAbsorptionMultiplier && (
-              <label className="field"><span>倍率</span><input type="number" min="0" step="any" value={form.absorptionMultiplier} onChange={(event) => update('absorptionMultiplier', event.target.value)} placeholder="0.65" required /><small>例如 rTG 填 1，EE 可填 0.65</small></label>
+              <label className="field"><span>倍率</span><input type="number" min="0" step="any" value={form.absorptionMultiplier} onChange={(event) => update('absorptionMultiplier', event.target.value)} placeholder="倍率数值" required /><small>填写用于修正有效利用量的倍率，基准值为 1</small></label>
             )}
           </div>
           <div className={`live-preview ${previewReady ? 'ready' : ''}`}>
@@ -784,7 +849,7 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
               </div>
             ) : <p>填写完整规格后，这里会自动显示单价。</p>}
           </div>
-          <label className="field"><span>购买商家 <em>选填</em></span><input value={form.merchant} onChange={(event) => update('merchant', event.target.value)} placeholder="例如：京东自营" /></label>
+          <label className="field"><span>购买商家 <em>选填</em></span><input value={form.merchant} onChange={(event) => update('merchant', event.target.value)} placeholder="输入商家名称" /></label>
           <label className="field"><span>备注 <em>选填</em></span><textarea rows={4} value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="促销条件、配送费用、口味等" /></label>
           {error && <p className="form-error">{error}</p>}
           <div className="drawer-actions"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={saving || !previewReady}>{saving ? '保存中…' : card ? '保存修改' : '添加到最右侧'}</button></div>

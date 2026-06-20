@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -46,6 +46,11 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /备份与恢复/ }))
     expect(screen.getByRole('menuitem', { name: /导出备份/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /恢复备份/ })).toBeInTheDocument()
+    fireEvent.mouseDown(screen.getByText('创建第一个清单'))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /备份与恢复/ }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('创建第一个清单'))
     expect(screen.queryByLabelText('货币代码')).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('清单名称'), { target: { value: '矿泉水' } })
@@ -63,9 +68,12 @@ describe('App', () => {
 
     render(<App />)
     expect(await screen.findByRole('heading', { name: '抽纸' })).toBeInTheDocument()
-    expect(screen.getByText('每件 / 每瓶 · 人民币')).toBeInTheDocument()
+    expect(screen.getAllByText('每件 / 每瓶')).toHaveLength(2)
+    expect(screen.queryByText('人民币')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '清单设置' }))
     expect(screen.getByLabelText('件数')).toBeChecked()
+    expect(screen.getByText('每个清单只使用一种比较基准；如需按其他指标比较，可以新建清单。')).toBeInTheDocument()
+    expect(screen.queryByText(/另一种算法/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     fireEvent.click(screen.getByLabelText('新建清单'))
     expect(screen.getByLabelText('容量')).toBeChecked()
@@ -110,6 +118,37 @@ describe('App', () => {
     const board = screen.getByLabelText('矿泉水商品卡片')
     fireEvent.wheel(board, { deltaY: 120, deltaX: 0 })
     expect(board.scrollLeft).toBe(120)
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    const cardDeleteDialog = screen.getByRole('alertdialog', { name: '确认删除' })
+    expect(cardDeleteDialog).toBeInTheDocument()
+    expect(within(cardDeleteDialog).getByText('测试水 550ml')).toBeInTheDocument()
+    expect(within(cardDeleteDialog).getByText('删除后无法撤销。')).toBeInTheDocument()
+    expect(api.cards.delete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+    await waitFor(() => expect(api.cards.delete).toHaveBeenCalledWith('water-card'))
+    expect(screen.getByText('卡片已删除')).toBeInTheDocument()
+  })
+
+  it('删除清单使用应用内确认对话框', async () => {
+    const list: ComparisonList = {
+      id: 'delete-list', name: '待删除清单', measureKind: 'count', measureKinds: ['count'],
+      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }
+    lists.push(list)
+
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '待删除清单' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '删除清单' }))
+    const listDeleteDialog = screen.getByRole('alertdialog', { name: '确认删除' })
+    expect(listDeleteDialog).toBeInTheDocument()
+    expect(within(listDeleteDialog).getByText('待删除清单')).toBeInTheDocument()
+    expect(within(listDeleteDialog).getByText('清单中的全部卡片也会被删除，且无法撤销。')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+    await waitFor(() => expect(api.lists.delete).toHaveBeenCalledWith('delete-list'))
+    expect(screen.getByText('清单已删除')).toBeInTheDocument()
   })
 
   it('有效成分和倍率默认折叠，勾选后才显示输入框', async () => {
@@ -122,12 +161,17 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByRole('heading', { name: '鱼油' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /添加第一张价格卡/ }))
-    expect(screen.queryByText(/DHA\+EPA/)).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('输入商品名称')).toBeInTheDocument()
+    expect(screen.getByText('本次购买的包装总数')).toBeInTheDocument()
+    expect(screen.getByText('每个包装内含的商品件数')).toBeInTheDocument()
+    expect(screen.getByText('规格')).toBeInTheDocument()
+    expect(screen.queryByText(/农夫山泉|每箱|鱼油 DHA/)).not.toBeInTheDocument()
+    expect(screen.queryByText('填写商品标注的有效成分百分比')).not.toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('启用有效成分占比'))
-    expect(screen.getByText(/DHA\+EPA/)).toBeInTheDocument()
-    expect(screen.queryByText(/EE 可填/)).not.toBeInTheDocument()
+    expect(screen.getByText('填写商品标注的有效成分百分比')).toBeInTheDocument()
+    expect(screen.queryByText('填写用于修正有效利用量的倍率，基准值为 1')).not.toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('启用倍率修正'))
-    expect(screen.getByText(/EE 可填/)).toBeInTheDocument()
+    expect(screen.getByText('填写用于修正有效利用量的倍率，基准值为 1')).toBeInTheDocument()
   })
 
   it('价格卡默认紧凑，展开后显示额外详情', async () => {

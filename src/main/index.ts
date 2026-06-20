@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, Menu, shell } from 'electron'
 import { PriceRepository } from './database'
 import { registerIpcHandlers } from './ipc'
 
@@ -29,7 +29,7 @@ function createWindow(): void {
     }
   })
 
-  window.setMenuBarVisibility(false)
+  window.removeMenu()
 
   window.once('ready-to-show', () => {
     if (!diagnosticMode) window.show()
@@ -93,6 +93,7 @@ if (process.env.BIJIAKA_USER_DATA) {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
