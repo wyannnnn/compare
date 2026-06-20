@@ -43,6 +43,9 @@ describe('App', () => {
   it('从欢迎页创建一个容量清单', async () => {
     render(<App />)
     expect(await screen.findByText('创建第一个清单')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /备份与恢复/ }))
+    expect(screen.getByRole('menuitem', { name: /导出备份/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /恢复备份/ })).toBeInTheDocument()
     fireEvent.click(screen.getByText('创建第一个清单'))
     expect(screen.queryByLabelText('货币代码')).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('清单名称'), { target: { value: '矿泉水' } })
@@ -89,9 +92,30 @@ describe('App', () => {
     expect(screen.getByText(/1\.8182/)).toBeInTheDocument()
     expect(screen.getByText('当前最低')).toBeInTheDocument()
     expect(screen.queryByText('最低')).not.toBeInTheDocument()
+    expect(screen.queryByText('有效成分')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '删除' })).toBeInTheDocument()
     const board = screen.getByLabelText('矿泉水商品卡片')
     fireEvent.wheel(board, { deltaY: 120, deltaX: 0 })
     expect(board.scrollLeft).toBe(120)
+  })
+
+  it('有效成分和倍率默认折叠，勾选后才显示输入框', async () => {
+    const list: ComparisonList = {
+      id: 'fish-list', name: '鱼油', measureKind: 'weight', measureKinds: ['weight'],
+      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }
+    lists.push(list)
+
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '鱼油' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /添加第一张价格卡/ }))
+    expect(screen.queryByText(/DHA\+EPA/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('启用有效成分占比'))
+    expect(screen.getByText(/DHA\+EPA/)).toBeInTheDocument()
+    expect(screen.queryByText(/EE 可填/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('启用倍率修正'))
+    expect(screen.getByText(/EE 可填/)).toBeInTheDocument()
   })
 
   it('从件数清单切换到重量清单时不会用旧卡片执行重量计算', async () => {

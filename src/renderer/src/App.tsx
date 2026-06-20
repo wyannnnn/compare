@@ -99,6 +99,7 @@ export function App(): React.JSX.Element {
   const [notice, setNotice] = useState<string | null>(null)
   const [listDialog, setListDialog] = useState<'create' | 'edit' | null>(null)
   const [drawerCard, setDrawerCard] = useState<PriceCard | 'new' | null>(null)
+  const [backupMenuOpen, setBackupMenuOpen] = useState(false)
   const noticeTimer = useRef<number | null>(null)
   const selectedList = lists.find((list) => list.id === selectedId) ?? null
   const currentCards = useMemo(
@@ -198,6 +199,7 @@ export function App(): React.JSX.Element {
   }
 
   const exportBackup = async (): Promise<void> => {
+    setBackupMenuOpen(false)
     try {
       const result = await window.compareApi.backup.export()
       if (result.status === 'completed') showNotice(`已导出 ${result.listCount} 个清单、${result.cardCount} 张卡片`)
@@ -207,6 +209,7 @@ export function App(): React.JSX.Element {
   }
 
   const restoreBackup = async (): Promise<void> => {
+    setBackupMenuOpen(false)
     try {
       const result = await window.compareApi.backup.restore()
       if (result.status !== 'completed') return
@@ -251,8 +254,15 @@ export function App(): React.JSX.Element {
           {!loading && lists.length === 0 && <p className="sidebar-empty">还没有清单。<br />从一箱水开始也很好。</p>}
         </nav>
         <div className="sidebar-footer">
-          <button className="quiet-button" onClick={exportBackup}><Icon>⇧</Icon> 导出备份</button>
-          <button className="quiet-button" onClick={restoreBackup}><Icon>⇩</Icon> 恢复备份</button>
+          <div className="backup-menu">
+            <button className="quiet-button backup-menu-button" aria-expanded={backupMenuOpen} onClick={() => setBackupMenuOpen((open) => !open)}><Icon>⇅</Icon> 备份与恢复</button>
+            {backupMenuOpen && (
+              <div className="backup-menu-popover" role="menu">
+                <button role="menuitem" onClick={exportBackup}><Icon>⇧</Icon> 导出备份</button>
+                <button role="menuitem" onClick={restoreBackup}><Icon>⇩</Icon> 恢复备份</button>
+              </div>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -353,7 +363,7 @@ function PriceBoard({ list, cards, loading, onAdd, onEdit, onDelete, onReorder }
   }
 
   return (
-    <section className="board-scroll" aria-label={`${list.name}商品卡片`} onWheel={handleWheel}>
+    <section className="board-scroll" aria-label={`${list.name}商品卡片`} onWheelCapture={handleWheel}>
       {loading && cards.length === 0 ? (
         <div className="loading-state">正在读取卡片…</div>
       ) : cards.length === 0 ? (
@@ -432,8 +442,8 @@ function PriceCardView({ card, list, lowest, overlay, dragHandle, onEdit, onDele
       <dl className="card-details">
         <div><dt>总件数</dt><dd>{formatDecimal(countResult.totalUnits)} 件</dd></div>
         <div><dt>基础每件价</dt><dd>{formatCurrency(countResult.pricePerUnit, list.currencyCode, true)}</dd></div>
-        <div><dt>有效成分</dt><dd>{card.activeIngredientPercent ? formatPercent(card.activeIngredientPercent) : '—'}</dd></div>
-        <div><dt>倍率</dt><dd>{card.absorptionMultiplier ? formatMultiplier(card.absorptionMultiplier) : '—'}</dd></div>
+        {card.activeIngredientPercent && <div><dt>有效成分</dt><dd>{formatPercent(card.activeIngredientPercent)}</dd></div>}
+        {card.absorptionMultiplier && <div><dt>倍率</dt><dd>{formatMultiplier(card.absorptionMultiplier)}</dd></div>}
         <div><dt>购买商家</dt><dd>{card.merchant || '—'}</dd></div>
         <div className="note-row"><dt>备注</dt><dd title={card.note ?? undefined}>{card.note || '—'}</dd></div>
       </dl>
@@ -454,8 +464,7 @@ function PriceCardView({ card, list, lowest, overlay, dragHandle, onEdit, onDele
         </div>
       </div>
       {!overlay && (
-        <div className="card-actions">
-          <button onClick={onEdit}>编辑</button>
+        <div className="card-actions single-action">
           <button className="delete-link" onClick={onDelete}>删除</button>
         </div>
       )}
@@ -537,7 +546,9 @@ interface CardFormState {
   volumeUnit: VolumeUnit | ''
   weightPerUnit: string
   weightUnit: WeightUnit | ''
+  useActiveIngredient: boolean
   activeIngredientPercent: string
+  useAbsorptionMultiplier: boolean
   absorptionMultiplier: string
   merchant: string
   note: string
@@ -556,7 +567,9 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
     volumeUnit: card?.volumeUnit ?? ((card?.contentUnit === 'ml' || card?.contentUnit === 'L') ? card.contentUnit : defaultVolumeUnit),
     weightPerUnit: card?.weightPerUnit ?? ((card?.contentUnit === 'g' || card?.contentUnit === 'kg') ? card.contentPerUnit ?? '' : ''),
     weightUnit: card?.weightUnit ?? ((card?.contentUnit === 'g' || card?.contentUnit === 'kg') ? card.contentUnit : defaultWeightUnit),
+    useActiveIngredient: Boolean(card?.activeIngredientPercent),
     activeIngredientPercent: card?.activeIngredientPercent ?? '',
+    useAbsorptionMultiplier: Boolean(card?.absorptionMultiplier),
     absorptionMultiplier: card?.absorptionMultiplier ?? '',
     merchant: card?.merchant ?? '',
     note: card?.note ?? ''
@@ -564,7 +577,7 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const update = (key: keyof CardFormState, value: string): void => setForm((current) => ({ ...current, [key]: value }))
+  const update = <K extends keyof CardFormState>(key: K, value: CardFormState[K]): void => setForm((current) => ({ ...current, [key]: value }))
   const draft: CardDraft = {
     name: form.name,
     totalPrice: form.totalPrice,
@@ -576,14 +589,16 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
     volumeUnit: hasMeasure(list, 'volume') ? form.volumeUnit as VolumeUnit : null,
     weightPerUnit: hasMeasure(list, 'weight') ? form.weightPerUnit : null,
     weightUnit: hasMeasure(list, 'weight') ? form.weightUnit as WeightUnit : null,
-    activeIngredientPercent: form.activeIngredientPercent || null,
-    absorptionMultiplier: form.absorptionMultiplier || null,
+    activeIngredientPercent: form.useActiveIngredient ? form.activeIngredientPercent : null,
+    absorptionMultiplier: form.useAbsorptionMultiplier ? form.absorptionMultiplier : null,
     merchant: form.merchant || null,
     note: form.note || null,
     source: card?.source ?? 'manual'
   }
   const preview = tryCalculatePrice(draft, measureKind)
-  const previewReady = Boolean(preview)
+  const adjustmentInputsReady = (!form.useActiveIngredient || form.activeIngredientPercent.trim() !== '') &&
+    (!form.useAbsorptionMultiplier || form.absorptionMultiplier.trim() !== '')
+  const previewReady = Boolean(preview) && adjustmentInputsReady
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -618,9 +633,15 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
           {hasMeasure(list, 'weight') && (
             <label className="field"><span>每件重量</span><div className="input-with-select"><input type="number" min="0" step="any" value={form.weightPerUnit} onChange={(event) => update('weightPerUnit', event.target.value)} placeholder="500" required /><select value={form.weightUnit} onChange={(event) => update('weightUnit', event.target.value)}><option>g</option><option>kg</option></select></div><small>用于计算每千克价格</small></label>
           )}
-          <div className="field-row">
-            <label className="field"><span>有效成分占比 <em>选填</em></span><div className="input-with-suffix"><input type="number" min="0" max="100" step="any" value={form.activeIngredientPercent} onChange={(event) => update('activeIngredientPercent', event.target.value)} placeholder="100" /><span>%</span></div><small>例如鱼油 DHA+EPA 72%，就填 72</small></label>
-            <label className="field"><span>倍率 <em>选填</em></span><input type="number" min="0" step="any" value={form.absorptionMultiplier} onChange={(event) => update('absorptionMultiplier', event.target.value)} placeholder="1" /><small>例如 rTG 填 1，EE 可填 0.65</small></label>
+          <div className="optional-adjustments">
+            <label className="option-toggle"><input type="checkbox" checked={form.useActiveIngredient} onChange={(event) => update('useActiveIngredient', event.target.checked)} /> 启用有效成分占比</label>
+            {form.useActiveIngredient && (
+              <label className="field"><span>有效成分占比</span><div className="input-with-suffix"><input type="number" min="0" max="100" step="any" value={form.activeIngredientPercent} onChange={(event) => update('activeIngredientPercent', event.target.value)} placeholder="72" required /><span>%</span></div><small>例如鱼油 DHA+EPA 72%，就填 72</small></label>
+            )}
+            <label className="option-toggle"><input type="checkbox" checked={form.useAbsorptionMultiplier} onChange={(event) => update('useAbsorptionMultiplier', event.target.checked)} /> 启用倍率修正</label>
+            {form.useAbsorptionMultiplier && (
+              <label className="field"><span>倍率</span><input type="number" min="0" step="any" value={form.absorptionMultiplier} onChange={(event) => update('absorptionMultiplier', event.target.value)} placeholder="0.65" required /><small>例如 rTG 填 1，EE 可填 0.65</small></label>
+            )}
           </div>
           <div className={`live-preview ${previewReady ? 'ready' : ''}`}>
             <span>实时计算</span>
