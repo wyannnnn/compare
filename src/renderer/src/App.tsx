@@ -63,7 +63,7 @@ function activeMeasureKind(list: ComparisonList): MeasureKind {
 }
 
 function measureSummary(list: ComparisonList): string {
-  return SHORT_MEASURE_LABELS[activeMeasureKind(list)]
+  return unitPriceTitle(activeMeasureKind(list))
 }
 
 function hasMeasure(list: ComparisonList, measureKind: MeasureKind): boolean {
@@ -346,8 +346,14 @@ function PriceBoard({ list, cards, loading, onAdd, onEdit, onDelete, onReorder }
     if (oldIndex >= 0 && newIndex >= 0) onReorder(arrayMove(cards, oldIndex, newIndex))
   }
 
+  const handleWheel = (event: React.WheelEvent<HTMLElement>): void => {
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+    event.currentTarget.scrollLeft += event.deltaY
+    event.preventDefault()
+  }
+
   return (
-    <section className="board-scroll" aria-label={`${list.name}商品卡片`}>
+    <section className="board-scroll" aria-label={`${list.name}商品卡片`} onWheel={handleWheel}>
       {loading && cards.length === 0 ? (
         <div className="loading-state">正在读取卡片…</div>
       ) : cards.length === 0 ? (
@@ -433,7 +439,7 @@ function PriceCardView({ card, list, lowest, overlay, dragHandle, onEdit, onDele
       </dl>
       <div className="unit-price-list">
         <div className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
-          <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind)}{lowest && <em>最低</em>}</span>
+          <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind)}</span>
           {result ? (
             <>
               <strong>{formatCurrency(result.normalizedPrice, list.currencyCode, true)}</strong>

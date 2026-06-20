@@ -60,6 +60,7 @@ describe('App', () => {
 
     render(<App />)
     expect(await screen.findByRole('heading', { name: '抽纸' })).toBeInTheDocument()
+    expect(screen.getByText('每件 / 每瓶 · 人民币')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '清单设置' }))
     expect(screen.getByLabelText('件数')).toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
@@ -84,8 +85,13 @@ describe('App', () => {
 
     render(<App />)
     expect(await screen.findByRole('heading', { name: '测试水 550ml' })).toBeInTheDocument()
-    expect(screen.getByText('每升')).toBeInTheDocument()
+    expect(screen.getAllByText('每升').length).toBeGreaterThan(0)
     expect(screen.getByText(/1\.8182/)).toBeInTheDocument()
+    expect(screen.getByText('当前最低')).toBeInTheDocument()
+    expect(screen.queryByText('最低')).not.toBeInTheDocument()
+    const board = screen.getByLabelText('矿泉水商品卡片')
+    fireEvent.wheel(board, { deltaY: 120, deltaX: 0 })
+    expect(board.scrollLeft).toBe(120)
   })
 
   it('从件数清单切换到重量清单时不会用旧卡片执行重量计算', async () => {
