@@ -19,18 +19,21 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import Decimal from 'decimal.js'
-import { calculatePrice, findLowestCardIds } from '../../shared/calculator'
+import { calculatePrice, findLowestCardIds, tryCalculatePrice } from '../../shared/calculator'
 import {
-  MEASURE_LABELS,
+  SHORT_MEASURE_LABELS,
   type CardDraft,
   type ComparisonList,
   type ComparisonListDraft,
   type ContentUnit,
   type MeasureKind,
-  type PriceCard
+  type PriceCard,
+  type VolumeUnit,
+  type WeightUnit
 } from '../../shared/types'
 
-const commonCurrencies = ['CNY', 'USD', 'EUR', 'JPY', 'HKD', 'GBP', 'KRW', 'SGD', 'AUD', 'CAD']
+const measureOrder: MeasureKind[] = ['count', 'volume', 'weight']
+const fixedCurrencyCode = 'CNY'
 
 function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) return '操作失败，请稍后重试'
@@ -53,6 +56,31 @@ function formatDecimal(value: string): string {
 
 function Icon({ children }: { children: React.ReactNode }): React.JSX.Element {
   return <span aria-hidden="true">{children}</span>
+}
+
+function normalizedListMeasures(list: ComparisonList): MeasureKind[] {
+  return list.measureKinds?.length ? list.measureKinds : [list.measureKind]
+}
+
+function measureSummary(measureKinds: MeasureKind[]): string {
+  return measureKinds.map((kind) => SHORT_MEASURE_LABELS[kind]).join(' + ')
+}
+
+function hasMeasure(list: ComparisonList, measureKind: MeasureKind): boolean {
+  return normalizedListMeasures(list).includes(measureKind)
+}
+
+function unitPriceTitle(measureKind: MeasureKind): string {
+  if (measureKind === 'count') return '每件 / 每瓶'
+  if (measureKind === 'volume') return '每升'
+  return '每千克'
+}
+
+function contentSpec(card: PriceCard, list: ComparisonList): string[] {
+  const specs: string[] = []
+  if (hasMeasure(list, 'volume')) specs.push(card.volumePerUnit && card.volumeUnit ? `${card.volumePerUnit} ${card.volumeUnit}/件` : '容量待补充')
+  if (hasMeasure(list, 'weight')) specs.push(card.weightPerUnit && card.weightUnit ? `${card.weightPerUnit} ${card.weightUnit}/件` : '重量待补充')
+  return specs
 }
 
 export function App(): React.JSX.Element {
@@ -104,7 +132,10 @@ export function App(): React.JSX.Element {
   }, [selectedId])
 
   const handleListSaved = (saved: ComparisonList, created: boolean): void => {
-    setLists((current) => created ? [...current, saved] : current.map((item) => item.id === saved.id ? saved : item))
+    setLists((current) => {
+      const withoutSaved = current.filter((item) => item.id !== saved.id)
+      return created ? [...withoutSaved, saved] : current.map((item) => item.id === saved.id ? saved : item)
+    })
     if (created) setCards([])
     setSelectedId(saved.id)
     setListDialog(null)
@@ -206,7 +237,7 @@ export function App(): React.JSX.Element {
                   }}
             >
               <span className="list-dot" />
-              <span className="list-nav-copy"><strong>{list.name}</strong><small>{MEASURE_LABELS[list.measureKind]} · {list.currencyCode}</small></span>
+              <span className="list-nav-copy"><strong>{list.name}</strong><small>{measureSummary(normalizedListMeasures(list))} · 人民币</small></span>
             </button>
           ))}
           {!loading && lists.length === 0 && <p className="sidebar-empty">还没有清单。<br />从一箱水开始也很好。</p>}
@@ -225,8 +256,8 @@ export function App(): React.JSX.Element {
                 <div className="eyebrow">当前清单</div>
                 <h1>{selectedList.name}</h1>
                 <div className="header-badges">
-                  <span>{MEASURE_LABELS[selectedList.measureKind]}</span>
-                  <span>{selectedList.currencyCode}</span>
+                  <span>{measureSummary(normalizedListMeasures(selectedList))}</span>
+                  <span>人民币</span>
                   <span>{currentCards.length} 张卡片</span>
                 </div>
               </div>
@@ -259,6 +290,7 @@ export function App(): React.JSX.Element {
 
       {listDialog && (
         <ListDialog
+          key={listDialog === 'edit' ? `edit-${selectedId}` : 'create'}
           list={listDialog === 'edit' ? selectedList : null}
           hasCards={listDialog === 'edit' && currentCards.length > 0}
           onClose={() => setListDialog(null)}
@@ -294,7 +326,10 @@ function PriceBoard({ list, cards, loading, onAdd, onEdit, onDelete, onReorder }
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
   const [activeId, setActiveId] = useState<string | null>(null)
-  const lowestIds = useMemo(() => findLowestCardIds(cards, list.measureKind), [cards, list.measureKind])
+  const selectedMeasureKinds = normalizedListMeasures(list)
+  const lowestIdsByMeasure = useMemo(() => {
+    return new Map(selectedMeasureKinds.map((measureKind) => [measureKind, findLowestCardIds(cards, measureKind)]))
+  }, [cards, selectedMeasureKinds])
   const activeCard = cards.find((card) => card.id === activeId) ?? null
 
   const handleDragEnd = (event: DragEndEvent): void => {
@@ -329,13 +364,13 @@ function PriceBoard({ list, cards, loading, onAdd, onEdit, onDelete, onReorder }
                 key={card.id}
                 card={card}
                 list={list}
-                lowest={lowestIds.has(card.id)}
+                lowestIdsByMeasure={lowestIdsByMeasure}
                 onEdit={() => onEdit(card)}
                 onDelete={() => onDelete(card)}
               />
             ))}
           </SortableContext>
-          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} overlay />}</DragOverlay>
+          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowestIdsByMeasure={lowestIdsByMeasure} overlay />}</DragOverlay>
         </DndContext>
       )}
       {cards.length > 0 && (
@@ -357,39 +392,58 @@ function SortablePriceCard(props: Omit<PriceCardViewProps, 'dragHandle' | 'overl
 interface PriceCardViewProps {
   card: PriceCard
   list: ComparisonList
-  lowest: boolean
+  lowestIdsByMeasure: Map<MeasureKind, Set<string>>
   overlay?: boolean
   dragHandle?: React.ButtonHTMLAttributes<HTMLButtonElement>
   onEdit?(): void
   onDelete?(): void
 }
 
-function PriceCardView({ card, list, lowest, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
-  const result = calculatePrice(card, list.measureKind)
-  const content = list.measureKind === 'count' ? null : `${card.contentPerUnit} ${card.contentUnit}/件`
+function PriceCardView({ card, list, lowestIdsByMeasure, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
+  const countResult = calculatePrice(card, 'count')
+  const specs = contentSpec(card, list)
+  const results = normalizedListMeasures(list).map((measureKind) => ({
+    measureKind,
+    result: tryCalculatePrice(card, measureKind),
+    lowest: lowestIdsByMeasure.get(measureKind)?.has(card.id) ?? false
+  }))
+  const hasLowest = results.some((entry) => entry.lowest)
   return (
-    <article className={`price-card ${lowest ? 'lowest' : ''} ${overlay ? 'overlay-card' : ''}`}>
+    <article className={`price-card ${hasLowest ? 'lowest' : ''} ${overlay ? 'overlay-card' : ''}`}>
       <div className="card-topline">
         <button className="drag-handle" aria-label={`拖动${card.name}`} title="拖动改变位置" {...dragHandle}>⠿</button>
-        {lowest ? <span className="lowest-badge">当前最低</span> : <span />}
+        {hasLowest ? <span className="lowest-badge">有最低项</span> : <span />}
         {!overlay && <button className="more-button" aria-label={`编辑${card.name}`} onClick={onEdit}>•••</button>}
       </div>
       <div className="card-title"><h2>{card.name}</h2><strong>{formatCurrency(card.totalPrice, list.currencyCode)}</strong></div>
       <div className="spec-box">
         <span>包装规格</span>
         <strong>{card.packageCount} 包 × {card.unitsPerPackage} 件</strong>
-        {content && <small>{content}</small>}
+        {specs.map((spec) => <small key={spec}>{spec}</small>)}
       </div>
       <dl className="card-details">
-        <div><dt>总件数</dt><dd>{formatDecimal(result.totalUnits)} 件</dd></div>
-        <div><dt>每件价格</dt><dd>{formatCurrency(result.pricePerUnit, list.currencyCode, true)}</dd></div>
+        <div><dt>总件数</dt><dd>{formatDecimal(countResult.totalUnits)} 件</dd></div>
+        <div><dt>基础每件价</dt><dd>{formatCurrency(countResult.pricePerUnit, list.currencyCode, true)}</dd></div>
         <div><dt>购买商家</dt><dd>{card.merchant || '—'}</dd></div>
         <div className="note-row"><dt>备注</dt><dd title={card.note ?? undefined}>{card.note || '—'}</dd></div>
       </dl>
-      <div className="unit-price">
-        <span>统一单价</span>
-        <strong>{formatCurrency(result.normalizedPrice, list.currencyCode, true)}</strong>
-        <small>/ {result.normalizedUnitLabel}</small>
+      <div className="unit-price-list">
+        {results.map(({ measureKind, result, lowest }) => (
+          <div key={measureKind} className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
+            <span>{unitPriceTitle(measureKind)}{lowest && <em>最低</em>}</span>
+            {result ? (
+              <>
+                <strong>{formatCurrency(result.normalizedPrice, list.currencyCode, true)}</strong>
+                <small>/ {result.normalizedUnitLabel}</small>
+              </>
+            ) : (
+              <>
+                <strong>待补充</strong>
+                <small>{measureKind === 'volume' ? '需要容量' : '需要重量'}</small>
+              </>
+            )}
+          </div>
+        ))}
       </div>
       {!overlay && (
         <div className="card-actions">
@@ -410,16 +464,28 @@ interface ListDialogProps {
 
 function ListDialog({ list, hasCards, onClose, onSaved }: ListDialogProps): React.JSX.Element {
   const [name, setName] = useState(list?.name ?? '')
-  const [measureKind, setMeasureKind] = useState<MeasureKind>(list?.measureKind ?? 'volume')
-  const [currencyCode, setCurrencyCode] = useState(list?.currencyCode ?? 'CNY')
+  const [selectedMeasures, setSelectedMeasures] = useState<MeasureKind[]>(list ? normalizedListMeasures(list) : ['count', 'volume'])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  const toggleMeasure = (measureKind: MeasureKind): void => {
+    setSelectedMeasures((current) => {
+      const next = current.includes(measureKind)
+        ? current.filter((kind) => kind !== measureKind)
+        : [...current, measureKind]
+      return measureOrder.filter((kind) => next.includes(kind))
+    })
+  }
+
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
+    if (selectedMeasures.length === 0) {
+      setError('至少选择一种对比条件')
+      return
+    }
     setSaving(true)
     setError(null)
-    const draft: ComparisonListDraft = { name, measureKind, currencyCode: currencyCode.toUpperCase() }
+    const draft: ComparisonListDraft = { name, measureKinds: selectedMeasures, currencyCode: fixedCurrencyCode }
     try {
       const saved = list
         ? await window.compareApi.lists.update(list.id, draft)
@@ -438,19 +504,20 @@ function ListDialog({ list, hasCards, onClose, onSaved }: ListDialogProps): Reac
         <div className="dialog-heading"><div><div className="eyebrow">{list ? '清单设置' : '新的对比'}</div><h2 id="list-dialog-title">{list ? '编辑清单' : '创建对比清单'}</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭">×</button></div>
         <form onSubmit={submit}>
           <label className="field"><span>清单名称</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：矿泉水" required /></label>
-          <fieldset className="field" disabled={hasCards}>
+          <fieldset className="field">
             <legend>比较基准</legend>
             <div className="segmented">
-              {(['count', 'volume', 'weight'] as MeasureKind[]).map((kind) => (
-                <label key={kind} className={measureKind === kind ? 'selected' : ''}>
-                  <input type="radio" name="measure" value={kind} checked={measureKind === kind} onChange={() => setMeasureKind(kind)} />
-                  {kind === 'count' ? '件数' : kind === 'volume' ? '容量' : '重量'}
+              {measureOrder.map((kind) => (
+                <label key={kind} className={selectedMeasures.includes(kind) ? 'selected' : ''}>
+                  <input type="checkbox" name="measure" value={kind} checked={selectedMeasures.includes(kind)} onChange={() => toggleMeasure(kind)} />
+                  {SHORT_MEASURE_LABELS[kind]}
                 </label>
               ))}
             </div>
+            <small>可多选。比如矿泉水可以同时看“每瓶”和“每升”。</small>
           </fieldset>
-          <label className="field"><span>货币代码</span><input list="currency-list" value={currencyCode} disabled={hasCards} maxLength={3} onChange={(event) => setCurrencyCode(event.target.value.toUpperCase())} required /><datalist id="currency-list">{commonCurrencies.map((code) => <option key={code} value={code} />)}</datalist></label>
-          {hasCards && <p className="field-hint">清单已有卡片，计量基准和货币已锁定。</p>}
+          <p className="field-hint">暂时固定使用人民币（CNY），这里先不需要填写货币代码。</p>
+          {hasCards && <p className="field-hint">提示：如果新增容量或重量条件，已有卡片可能需要编辑补充规格。</p>}
           {error && <p className="form-error">{error}</p>}
           <div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={saving}>{saving ? '保存中…' : '保存清单'}</button></div>
         </form>
@@ -471,21 +538,26 @@ interface CardFormState {
   totalPrice: string
   packageCount: string
   unitsPerPackage: string
-  contentPerUnit: string
-  contentUnit: ContentUnit | ''
+  volumePerUnit: string
+  volumeUnit: VolumeUnit | ''
+  weightPerUnit: string
+  weightUnit: WeightUnit | ''
   merchant: string
   note: string
 }
 
 function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JSX.Element {
-  const defaultUnit: ContentUnit | '' = list.measureKind === 'volume' ? 'ml' : list.measureKind === 'weight' ? 'g' : ''
+  const defaultVolumeUnit: VolumeUnit | '' = hasMeasure(list, 'volume') ? 'ml' : ''
+  const defaultWeightUnit: WeightUnit | '' = hasMeasure(list, 'weight') ? 'g' : ''
   const [form, setForm] = useState<CardFormState>({
     name: card?.name ?? '',
     totalPrice: card?.totalPrice ?? '',
     packageCount: String(card?.packageCount ?? 1),
     unitsPerPackage: String(card?.unitsPerPackage ?? 1),
-    contentPerUnit: card?.contentPerUnit ?? '',
-    contentUnit: card?.contentUnit ?? defaultUnit,
+    volumePerUnit: card?.volumePerUnit ?? ((card?.contentUnit === 'ml' || card?.contentUnit === 'L') ? card.contentPerUnit ?? '' : ''),
+    volumeUnit: card?.volumeUnit ?? ((card?.contentUnit === 'ml' || card?.contentUnit === 'L') ? card.contentUnit : defaultVolumeUnit),
+    weightPerUnit: card?.weightPerUnit ?? ((card?.contentUnit === 'g' || card?.contentUnit === 'kg') ? card.contentPerUnit ?? '' : ''),
+    weightUnit: card?.weightUnit ?? ((card?.contentUnit === 'g' || card?.contentUnit === 'kg') ? card.contentUnit : defaultWeightUnit),
     merchant: card?.merchant ?? '',
     note: card?.note ?? ''
   })
@@ -498,14 +570,21 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
     totalPrice: form.totalPrice,
     packageCount: Number(form.packageCount),
     unitsPerPackage: Number(form.unitsPerPackage),
-    contentPerUnit: list.measureKind === 'count' ? null : form.contentPerUnit,
-    contentUnit: list.measureKind === 'count' ? null : (form.contentUnit as ContentUnit),
+    contentPerUnit: hasMeasure(list, 'volume') ? form.volumePerUnit : hasMeasure(list, 'weight') ? form.weightPerUnit : null,
+    contentUnit: hasMeasure(list, 'volume') ? form.volumeUnit as ContentUnit : hasMeasure(list, 'weight') ? form.weightUnit as ContentUnit : null,
+    volumePerUnit: hasMeasure(list, 'volume') ? form.volumePerUnit : null,
+    volumeUnit: hasMeasure(list, 'volume') ? form.volumeUnit as VolumeUnit : null,
+    weightPerUnit: hasMeasure(list, 'weight') ? form.weightPerUnit : null,
+    weightUnit: hasMeasure(list, 'weight') ? form.weightUnit as WeightUnit : null,
     merchant: form.merchant || null,
     note: form.note || null,
     source: card?.source ?? 'manual'
   }
-  let preview: ReturnType<typeof calculatePrice> | null = null
-  try { preview = calculatePrice(draft, list.measureKind) } catch { preview = null }
+  const previewRows = normalizedListMeasures(list).map((measureKind) => ({
+    measureKind,
+    result: tryCalculatePrice(draft, measureKind)
+  }))
+  const previewReady = previewRows.every((row) => row.result)
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -523,33 +602,37 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
     }
   }
 
-  const contentLabel = list.measureKind === 'volume' ? '每件容量' : '每件重量'
-  const units = list.measureKind === 'volume' ? ['ml', 'L'] : ['g', 'kg']
-
   return (
     <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="card-drawer-title">
         <div className="drawer-heading"><div><div className="eyebrow">{card ? '更新报价' : '添加比较项'}</div><h2 id="card-drawer-title">{card ? '编辑价格卡' : '新建价格卡'}</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭">×</button></div>
         <form onSubmit={submit} className="drawer-form">
           <label className="field"><span>商品名称</span><input autoFocus value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="例如：农夫山泉 550ml" required /></label>
-          <label className="field"><span>总价</span><div className="input-with-prefix"><span>{list.currencyCode}</span><input type="number" min="0" step="any" value={form.totalPrice} onChange={(event) => update('totalPrice', event.target.value)} placeholder="0.00" required /></div><small>这里填写以下全部包装合计的价格</small></label>
+          <label className="field"><span>总价</span><div className="input-with-prefix"><span>¥</span><input type="number" min="0" step="any" value={form.totalPrice} onChange={(event) => update('totalPrice', event.target.value)} placeholder="0.00" required /></div><small>这里填写以下全部包装合计的价格</small></label>
           <div className="field-row">
             <label className="field"><span>包装数量</span><input type="number" min="1" step="1" value={form.packageCount} onChange={(event) => update('packageCount', event.target.value)} required /><small>例如 2 箱</small></label>
             <label className="field"><span>每包装件数</span><input type="number" min="1" step="1" value={form.unitsPerPackage} onChange={(event) => update('unitsPerPackage', event.target.value)} required /><small>例如每箱 24 瓶</small></label>
           </div>
-          {list.measureKind !== 'count' && (
-            <label className="field"><span>{contentLabel}</span><div className="input-with-select"><input type="number" min="0" step="any" value={form.contentPerUnit} onChange={(event) => update('contentPerUnit', event.target.value)} placeholder={list.measureKind === 'volume' ? '550' : '500'} required /><select value={form.contentUnit} onChange={(event) => update('contentUnit', event.target.value)}>{units.map((unit) => <option key={unit}>{unit}</option>)}</select></div></label>
+          {hasMeasure(list, 'volume') && (
+            <label className="field"><span>每件容量</span><div className="input-with-select"><input type="number" min="0" step="any" value={form.volumePerUnit} onChange={(event) => update('volumePerUnit', event.target.value)} placeholder="550" required /><select value={form.volumeUnit} onChange={(event) => update('volumeUnit', event.target.value)}><option>ml</option><option>L</option></select></div><small>用于计算每升价格</small></label>
           )}
-          <div className={`live-preview ${preview ? 'ready' : ''}`}>
+          {hasMeasure(list, 'weight') && (
+            <label className="field"><span>每件重量</span><div className="input-with-select"><input type="number" min="0" step="any" value={form.weightPerUnit} onChange={(event) => update('weightPerUnit', event.target.value)} placeholder="500" required /><select value={form.weightUnit} onChange={(event) => update('weightUnit', event.target.value)}><option>g</option><option>kg</option></select></div><small>用于计算每千克价格</small></label>
+          )}
+          <div className={`live-preview ${previewReady ? 'ready' : ''}`}>
             <span>实时计算</span>
-            {preview ? (
-              <div><p><small>每件价格</small><strong>{formatCurrency(preview.pricePerUnit, list.currencyCode, true)}</strong></p><p><small>统一单价</small><strong>{formatCurrency(preview.normalizedPrice, list.currencyCode, true)} / {preview.normalizedUnitLabel}</strong></p></div>
+            {previewRows.some((row) => row.result) ? (
+              <div>
+                {previewRows.map(({ measureKind, result }) => (
+                  <p key={measureKind}><small>{unitPriceTitle(measureKind)}</small><strong>{result ? `${formatCurrency(result.normalizedPrice, list.currencyCode, true)} / ${result.normalizedUnitLabel}` : '待补充'}</strong></p>
+                ))}
+              </div>
             ) : <p>填写完整规格后，这里会自动显示单价。</p>}
           </div>
           <label className="field"><span>购买商家 <em>选填</em></span><input value={form.merchant} onChange={(event) => update('merchant', event.target.value)} placeholder="例如：京东自营" /></label>
           <label className="field"><span>备注 <em>选填</em></span><textarea rows={4} value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="促销条件、配送费用、口味等" /></label>
           {error && <p className="form-error">{error}</p>}
-          <div className="drawer-actions"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={saving || !preview}>{saving ? '保存中…' : card ? '保存修改' : '添加到最右侧'}</button></div>
+          <div className="drawer-actions"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={saving || !previewReady}>{saving ? '保存中…' : card ? '保存修改' : '添加到最右侧'}</button></div>
         </form>
       </aside>
     </div>

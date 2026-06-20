@@ -15,7 +15,16 @@ describe('App', () => {
       lists: {
         getAll: vi.fn(async () => lists),
         create: vi.fn(async (draft) => {
-          const item = { id: 'list-1', ...draft, createdAt: '2026-01-01', updatedAt: '2026-01-01' }
+          const measureKinds = draft.measureKinds ?? [draft.measureKind ?? 'volume']
+          const item = {
+            id: 'list-1',
+            name: draft.name,
+            measureKind: measureKinds[0],
+            measureKinds,
+            currencyCode: 'CNY',
+            createdAt: '2026-01-01',
+            updatedAt: '2026-01-01'
+          }
           lists.push(item)
           return item
         }),
@@ -35,19 +44,43 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByText('创建第一个清单')).toBeInTheDocument()
     fireEvent.click(screen.getByText('创建第一个清单'))
+    expect(screen.queryByLabelText('货币代码')).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('清单名称'), { target: { value: '矿泉水' } })
     fireEvent.click(screen.getByText('保存清单'))
-    await waitFor(() => expect(api.lists.create).toHaveBeenCalledWith({ name: '矿泉水', measureKind: 'volume', currencyCode: 'CNY' }))
+    await waitFor(() => expect(api.lists.create).toHaveBeenCalledWith({ name: '矿泉水', measureKinds: ['count', 'volume'], currencyCode: 'CNY' }))
     expect(await screen.findByRole('heading', { name: '矿泉水' })).toBeInTheDocument()
+  })
+
+  it('多条件清单会同时展示每件和每升单价', async () => {
+    const list: ComparisonList = {
+      id: 'water-list', name: '矿泉水', measureKind: 'count', measureKinds: ['count', 'volume'],
+      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }
+    lists.push(list)
+    vi.mocked(api.cards.getAll).mockResolvedValue([{
+      id: 'water-card', listId: list.id, name: '测试水 550ml', totalPrice: '48',
+      packageCount: 2, unitsPerPackage: 24, contentPerUnit: '550', contentUnit: 'ml',
+      volumePerUnit: '550', volumeUnit: 'ml', weightPerUnit: null, weightUnit: null,
+      merchant: null, note: null, source: 'manual', sortIndex: 0,
+      createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }])
+
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '测试水 550ml' })).toBeInTheDocument()
+    expect(screen.getByText('每件 / 每瓶')).toBeInTheDocument()
+    expect(screen.getByText('每升')).toBeInTheDocument()
+    expect(screen.getByText(/1\.8182/)).toBeInTheDocument()
   })
 
   it('从件数清单切换到重量清单时不会用旧卡片执行重量计算', async () => {
     const countList: ComparisonList = {
       id: 'count-list', name: '抽纸', measureKind: 'count', currencyCode: 'CNY',
+      measureKinds: ['count'],
       createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }
     const weightList: ComparisonList = {
       id: 'weight-list', name: '大米', measureKind: 'weight', currencyCode: 'CNY',
+      measureKinds: ['weight'],
       createdAt: '2026-01-02', updatedAt: '2026-01-02'
     }
     lists.push(countList, weightList)
@@ -56,6 +89,7 @@ describe('App', () => {
         return [{
           id: 'count-card', listId: countList.id, name: '六包装抽纸', totalPrice: '19.9',
           packageCount: 1, unitsPerPackage: 6, contentPerUnit: null, contentUnit: null,
+          volumePerUnit: null, volumeUnit: null, weightPerUnit: null, weightUnit: null,
           merchant: null, note: null, source: 'manual', sortIndex: 0,
           createdAt: '2026-01-01', updatedAt: '2026-01-01'
         }]

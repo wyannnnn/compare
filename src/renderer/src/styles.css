@@ -89,8 +89,11 @@ h1, h2, p { margin-top: 0; }
 .card-details dt { flex: 0 0 auto; color: var(--muted); }
 .card-details dd { margin: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .note-row dd { max-width: 172px; }
-.unit-price { display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 4px; margin-top: auto; padding: 15px 3px 11px; }
+.unit-price-list { display: flex; flex-direction: column; gap: 7px; margin-top: auto; padding: 13px 3px 11px; }
+.unit-price { display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 4px; padding: 9px 10px; border: 1px solid transparent; border-radius: 12px; background: color-mix(in srgb, var(--soft) 55%, transparent); }
+.unit-price.lowest-unit { border-color: #9dd0b7; background: var(--accent-soft); }
 .unit-price span { color: var(--muted); font-size: 11px; }
+.unit-price span em { margin-left: 5px; padding: 2px 5px; border-radius: 10px; color: var(--accent); background: color-mix(in srgb, white 55%, transparent); font-size: 9px; font-style: normal; font-weight: 800; }
 .unit-price strong { color: var(--accent); font-size: 21px; letter-spacing: -.03em; }
 .unit-price small { color: var(--accent); font-size: 11px; }
 .card-actions { display: grid; grid-template-columns: 1fr auto; gap: 7px; }

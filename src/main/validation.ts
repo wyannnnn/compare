@@ -5,11 +5,14 @@ import type {
   ContentUnit,
   InputSource,
   MeasureKind,
-  PriceCard
+  PriceCard,
+  VolumeUnit,
+  WeightUnit
 } from '../shared/types'
 import { calculatePrice, normalizePositiveDecimal, ValidationError } from '../shared/calculator'
 
 const measureKinds = new Set<MeasureKind>(['count', 'volume', 'weight'])
+const measureOrder: MeasureKind[] = ['count', 'volume', 'weight']
 const sources = new Set<InputSource>(['manual', 'ocr'])
 
 function requiredText(value: unknown, label: string): string {
@@ -27,18 +30,18 @@ function optionalText(value: unknown, label: string): string | null {
 
 export function validateListDraft(value: ComparisonListDraft): ComparisonListDraft {
   const name = requiredText(value?.name, '清单名称')
-  if (!measureKinds.has(value?.measureKind)) throw new ValidationError('计量方式不正确')
-  const currencyCode = requiredText(value?.currencyCode, '货币代码').toUpperCase()
-  if (!/^[A-Z]{3}$/.test(currencyCode)) throw new ValidationError('货币代码必须是 3 位字母')
-  try {
-    new Intl.NumberFormat('zh-CN', { style: 'currency', currency: currencyCode }).format(1)
-  } catch {
-    throw new ValidationError('不支持该货币代码')
+  const normalizedMeasureKinds = normalizeMeasureKinds(value)
+  return {
+    name,
+    measureKind: normalizedMeasureKinds[0],
+    measureKinds: normalizedMeasureKinds,
+    // 首版暂时固定人民币。保留字段是为了兼容旧数据和备份格式。
+    currencyCode: 'CNY'
   }
-  return { name, measureKind: value.measureKind, currencyCode }
 }
 
-export function validateCardDraft(value: CardDraft, measureKind: MeasureKind): CardDraft {
+export function validateCardDraft(value: CardDraft, selectedMeasureKinds: MeasureKind | MeasureKind[]): CardDraft {
+  const selected = Array.isArray(selectedMeasureKinds) ? selectedMeasureKinds : [selectedMeasureKinds]
   const draft: CardDraft = {
     name: requiredText(value?.name, '商品名称'),
     totalPrice: normalizePositiveDecimal(String(value?.totalPrice ?? ''), '总价'),
@@ -46,19 +49,75 @@ export function validateCardDraft(value: CardDraft, measureKind: MeasureKind): C
     unitsPerPackage: Number(value?.unitsPerPackage),
     contentPerUnit: value?.contentPerUnit == null ? null : String(value.contentPerUnit),
     contentUnit: (value?.contentUnit ?? null) as ContentUnit | null,
+    volumePerUnit: normalizeLegacyContent(value, 'volume').perUnit,
+    volumeUnit: normalizeLegacyContent(value, 'volume').unit as VolumeUnit | null,
+    weightPerUnit: normalizeLegacyContent(value, 'weight').perUnit,
+    weightUnit: normalizeLegacyContent(value, 'weight').unit as WeightUnit | null,
     merchant: optionalText(value?.merchant, '购买商家'),
     note: optionalText(value?.note, '备注'),
     source: value?.source as InputSource
   }
   if (!sources.has(draft.source)) throw new ValidationError('录入来源不正确')
-  calculatePrice(draft, measureKind)
-  if (measureKind === 'count') {
+  selected.forEach((measureKind) => calculatePrice(draft, measureKind))
+  if (selected.includes('volume')) {
+    draft.volumePerUnit = normalizePositiveDecimal(draft.volumePerUnit ?? '', '每件容量')
+  } else {
+    draft.volumePerUnit = null
+    draft.volumeUnit = null
+  }
+  if (selected.includes('weight')) {
+    draft.weightPerUnit = normalizePositiveDecimal(draft.weightPerUnit ?? '', '每件重量')
+  } else {
+    draft.weightPerUnit = null
+    draft.weightUnit = null
+  }
+  if (draft.volumePerUnit && draft.volumeUnit) {
+    draft.contentPerUnit = draft.volumePerUnit
+    draft.contentUnit = draft.volumeUnit
+  } else if (draft.weightPerUnit && draft.weightUnit) {
+    draft.contentPerUnit = draft.weightPerUnit
+    draft.contentUnit = draft.weightUnit
+  } else {
     draft.contentPerUnit = null
     draft.contentUnit = null
-  } else {
-    draft.contentPerUnit = normalizePositiveDecimal(draft.contentPerUnit ?? '', measureKind === 'volume' ? '每件容量' : '每件重量')
   }
   return draft
+}
+
+function normalizeMeasureKinds(value: ComparisonListDraft): MeasureKind[] {
+  const raw = Array.isArray(value?.measureKinds)
+    ? value.measureKinds
+    : value?.measureKind
+      ? [value.measureKind]
+      : ['count', 'volume']
+  const selected = new Set<MeasureKind>()
+  raw.forEach((kind) => {
+    if (!measureKinds.has(kind)) throw new ValidationError('计量方式不正确')
+    selected.add(kind)
+  })
+  const normalized = measureOrder.filter((kind) => selected.has(kind))
+  if (normalized.length === 0) throw new ValidationError('至少选择一种对比条件')
+  return normalized
+}
+
+function normalizeLegacyContent(
+  value: CardDraft,
+  kind: 'volume' | 'weight'
+): { perUnit: string | null, unit: VolumeUnit | WeightUnit | null } {
+  if (kind === 'volume') {
+    const unit = value?.volumeUnit ?? ((value?.contentUnit === 'ml' || value?.contentUnit === 'L') ? value.contentUnit : null)
+    const perUnit = value?.volumePerUnit ?? ((unit && (value?.contentUnit === 'ml' || value?.contentUnit === 'L')) ? value?.contentPerUnit ?? null : null)
+    return {
+      perUnit: perUnit == null ? null : String(perUnit),
+      unit: unit == null ? null : unit
+    }
+  }
+  const unit = value?.weightUnit ?? ((value?.contentUnit === 'g' || value?.contentUnit === 'kg') ? value.contentUnit : null)
+  const perUnit = value?.weightPerUnit ?? ((unit && (value?.contentUnit === 'g' || value?.contentUnit === 'kg')) ? value?.contentPerUnit ?? null : null)
+  return {
+    perUnit: perUnit == null ? null : String(perUnit),
+    unit: unit == null ? null : unit
+  }
 }
 
 export function validateBackupSnapshot(value: unknown): BackupSnapshot {
@@ -92,7 +151,7 @@ export function validateBackupSnapshot(value: unknown): BackupSnapshot {
     const list = listById.get(card.listId)
     if (!list) throw new ValidationError('备份中存在未归属清单的卡片')
     if (!Number.isSafeInteger(card.sortIndex) || card.sortIndex < 0) throw new ValidationError('备份中的卡片顺序无效')
-    return { ...card, ...validateCardDraft(card, list.measureKind) }
+    return { ...card, ...validateCardDraft(card, list.measureKinds) }
   })
 
   return {

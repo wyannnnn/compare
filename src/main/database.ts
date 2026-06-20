@@ -5,18 +5,61 @@ import type {
   CardDraft,
   ComparisonList,
   ComparisonListDraft,
+  MeasureKind,
   PriceCard
 } from '../shared/types'
 import { ValidationError } from '../shared/calculator'
 import { validateCardDraft, validateListDraft } from './validation'
 
 type DbRow = Record<string, SQLInputValue>
+const measureOrder: MeasureKind[] = ['count', 'volume', 'weight']
+
+function parseMeasureKinds(value: SQLInputValue | undefined, fallback: MeasureKind): MeasureKind[] {
+  const raw = value == null ? '' : String(value).trim()
+  const candidates = raw.startsWith('[')
+    ? safeJsonArray(raw)
+    : raw.split(',').map((entry) => entry.trim()).filter(Boolean)
+  const selected = new Set<MeasureKind>()
+  candidates.forEach((entry) => {
+    if (entry === 'count' || entry === 'volume' || entry === 'weight') selected.add(entry)
+  })
+  if (selected.size === 0) selected.add(fallback)
+  return measureOrder.filter((kind) => selected.has(kind))
+}
+
+function safeJsonArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.map(String) : []
+  } catch {
+    return []
+  }
+}
+
+function serializeMeasureKinds(value: MeasureKind[]): string {
+  return value.join(',')
+}
+
+function volumeUnitFromRow(row: DbRow): PriceCard['volumeUnit'] {
+  if (row.volume_unit === 'ml' || row.volume_unit === 'L') return row.volume_unit
+  if (row.content_unit === 'ml' || row.content_unit === 'L') return row.content_unit
+  return null
+}
+
+function weightUnitFromRow(row: DbRow): PriceCard['weightUnit'] {
+  if (row.weight_unit === 'g' || row.weight_unit === 'kg') return row.weight_unit
+  if (row.content_unit === 'g' || row.content_unit === 'kg') return row.content_unit
+  return null
+}
 
 function listFromRow(row: DbRow): ComparisonList {
+  const fallbackMeasureKind = String(row.measure_kind) as ComparisonList['measureKind']
+  const measureKinds = parseMeasureKinds(row.measure_kinds, fallbackMeasureKind)
   return {
     id: String(row.id),
     name: String(row.name),
-    measureKind: String(row.measure_kind) as ComparisonList['measureKind'],
+    measureKind: measureKinds[0],
+    measureKinds,
     currencyCode: String(row.currency_code),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
@@ -24,6 +67,8 @@ function listFromRow(row: DbRow): ComparisonList {
 }
 
 function cardFromRow(row: DbRow): PriceCard {
+  const volumeUnit = volumeUnitFromRow(row)
+  const weightUnit = weightUnitFromRow(row)
   return {
     id: String(row.id),
     listId: String(row.list_id),
@@ -33,6 +78,14 @@ function cardFromRow(row: DbRow): PriceCard {
     unitsPerPackage: Number(row.units_per_package),
     contentPerUnit: row.content_per_unit == null ? null : String(row.content_per_unit),
     contentUnit: row.content_unit == null ? null : (String(row.content_unit) as PriceCard['contentUnit']),
+    volumePerUnit: row.volume_per_unit == null
+      ? (volumeUnit && row.content_per_unit != null ? String(row.content_per_unit) : null)
+      : String(row.volume_per_unit),
+    volumeUnit,
+    weightPerUnit: row.weight_per_unit == null
+      ? (weightUnit && row.content_per_unit != null ? String(row.content_per_unit) : null)
+      : String(row.weight_per_unit),
+    weightUnit,
     merchant: row.merchant == null ? null : String(row.merchant),
     note: row.note == null ? null : String(row.note),
     source: String(row.source) as PriceCard['source'],
@@ -61,6 +114,7 @@ export class PriceRepository {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         measure_kind TEXT NOT NULL CHECK (measure_kind IN ('count', 'volume', 'weight')),
+        measure_kinds TEXT NOT NULL DEFAULT 'volume',
         currency_code TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -74,6 +128,10 @@ export class PriceRepository {
         units_per_package INTEGER NOT NULL CHECK (units_per_package > 0),
         content_per_unit TEXT,
         content_unit TEXT CHECK (content_unit IS NULL OR content_unit IN ('ml', 'L', 'g', 'kg')),
+        volume_per_unit TEXT,
+        volume_unit TEXT CHECK (volume_unit IS NULL OR volume_unit IN ('ml', 'L')),
+        weight_per_unit TEXT,
+        weight_unit TEXT CHECK (weight_unit IS NULL OR weight_unit IN ('g', 'kg')),
         merchant TEXT,
         note TEXT,
         source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'ocr')),
@@ -85,6 +143,20 @@ export class PriceRepository {
         ON price_cards(list_id, sort_index);
       INSERT OR IGNORE INTO app_meta(key, value) VALUES ('schema_version', '1');
     `)
+    this.addColumnIfMissing('comparison_lists', 'measure_kinds', 'TEXT')
+    this.db.prepare("UPDATE comparison_lists SET measure_kinds = measure_kind WHERE measure_kinds IS NULL OR measure_kinds = ''").run()
+    this.addColumnIfMissing('price_cards', 'volume_per_unit', 'TEXT')
+    this.addColumnIfMissing('price_cards', 'volume_unit', "TEXT CHECK (volume_unit IS NULL OR volume_unit IN ('ml', 'L'))")
+    this.addColumnIfMissing('price_cards', 'weight_per_unit', 'TEXT')
+    this.addColumnIfMissing('price_cards', 'weight_unit', "TEXT CHECK (weight_unit IS NULL OR weight_unit IN ('g', 'kg'))")
+    this.db.prepare("UPDATE price_cards SET volume_per_unit = content_per_unit, volume_unit = content_unit WHERE content_unit IN ('ml', 'L') AND volume_per_unit IS NULL").run()
+    this.db.prepare("UPDATE price_cards SET weight_per_unit = content_per_unit, weight_unit = content_unit WHERE content_unit IN ('g', 'kg') AND weight_per_unit IS NULL").run()
+    this.db.prepare("UPDATE app_meta SET value = '2' WHERE key = 'schema_version'").run()
+  }
+
+  private addColumnIfMissing(table: string, column: string, definition: string): void {
+    const columns = new Set((this.db.prepare(`PRAGMA table_info(${table})`).all() as DbRow[]).map((row) => String(row.name)))
+    if (!columns.has(column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`)
   }
 
   close(): void {
@@ -105,23 +177,19 @@ export class PriceRepository {
     const now = new Date().toISOString()
     const list: ComparisonList = { id: randomUUID(), ...draft, createdAt: now, updatedAt: now }
     this.db.prepare(`
-      INSERT INTO comparison_lists(id, name, measure_kind, currency_code, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(list.id, list.name, list.measureKind, list.currencyCode, list.createdAt, list.updatedAt)
+      INSERT INTO comparison_lists(id, name, measure_kind, measure_kinds, currency_code, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(list.id, list.name, list.measureKind, serializeMeasureKinds(list.measureKinds), list.currencyCode, list.createdAt, list.updatedAt)
     return list
   }
 
   updateList(id: string, input: ComparisonListDraft): ComparisonList {
     const current = this.requireList(id)
     const draft = validateListDraft(input)
-    const count = Number((this.db.prepare('SELECT COUNT(*) AS count FROM price_cards WHERE list_id = ?').get(id) as DbRow).count)
-    if (count > 0 && (draft.measureKind !== current.measureKind || draft.currencyCode !== current.currencyCode)) {
-      throw new ValidationError('清单已有卡片，只能修改名称')
-    }
     const updatedAt = new Date().toISOString()
     this.db.prepare(`
-      UPDATE comparison_lists SET name = ?, measure_kind = ?, currency_code = ?, updated_at = ? WHERE id = ?
-    `).run(draft.name, draft.measureKind, draft.currencyCode, updatedAt, id)
+      UPDATE comparison_lists SET name = ?, measure_kind = ?, measure_kinds = ?, currency_code = ?, updated_at = ? WHERE id = ?
+    `).run(draft.name, draft.measureKind, serializeMeasureKinds(draft.measureKinds ?? [draft.measureKind ?? current.measureKind]), draft.currencyCode, updatedAt, id)
     return { ...current, ...draft, updatedAt }
   }
 
@@ -142,7 +210,7 @@ export class PriceRepository {
 
   createCard(listId: string, input: CardDraft): PriceCard {
     const list = this.requireList(listId)
-    const draft = validateCardDraft(input, list.measureKind)
+    const draft = validateCardDraft(input, list.measureKinds)
     const maxRow = this.db.prepare('SELECT COALESCE(MAX(sort_index), -1) AS max_sort FROM price_cards WHERE list_id = ?').get(listId) as DbRow
     const now = new Date().toISOString()
     const card: PriceCard = {
@@ -155,15 +223,17 @@ export class PriceRepository {
   updateCard(id: string, input: CardDraft): PriceCard {
     const current = this.requireCard(id)
     const list = this.requireList(current.listId)
-    const draft = validateCardDraft(input, list.measureKind)
+    const draft = validateCardDraft(input, list.measureKinds)
     const updatedAt = new Date().toISOString()
     this.db.prepare(`
       UPDATE price_cards SET name = ?, total_price = ?, package_count = ?, units_per_package = ?,
-        content_per_unit = ?, content_unit = ?, merchant = ?, note = ?, source = ?, updated_at = ?
+        content_per_unit = ?, content_unit = ?, volume_per_unit = ?, volume_unit = ?, weight_per_unit = ?, weight_unit = ?,
+        merchant = ?, note = ?, source = ?, updated_at = ?
       WHERE id = ?
     `).run(
       draft.name, draft.totalPrice, draft.packageCount, draft.unitsPerPackage,
-      draft.contentPerUnit, draft.contentUnit, draft.merchant, draft.note, draft.source, updatedAt, id
+      draft.contentPerUnit, draft.contentUnit, draft.volumePerUnit, draft.volumeUnit, draft.weightPerUnit, draft.weightUnit,
+      draft.merchant, draft.note, draft.source, updatedAt, id
     )
     return { ...current, ...draft, updatedAt }
   }
@@ -203,11 +273,11 @@ export class PriceRepository {
     this.transaction(() => {
       this.db.exec('DELETE FROM price_cards; DELETE FROM comparison_lists;')
       const listStatement = this.db.prepare(`
-        INSERT INTO comparison_lists(id, name, measure_kind, currency_code, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO comparison_lists(id, name, measure_kind, measure_kinds, currency_code, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `)
       snapshot.lists.forEach((list) => listStatement.run(
-        list.id, list.name, list.measureKind, list.currencyCode, list.createdAt, list.updatedAt
+        list.id, list.name, list.measureKind, serializeMeasureKinds(list.measureKinds), list.currencyCode, list.createdAt, list.updatedAt
       ))
       snapshot.cards.forEach((card) => this.insertCard(card))
     })
@@ -217,11 +287,13 @@ export class PriceRepository {
     this.db.prepare(`
       INSERT INTO price_cards(
         id, list_id, name, total_price, package_count, units_per_package,
-        content_per_unit, content_unit, merchant, note, source, sort_index, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        content_per_unit, content_unit, volume_per_unit, volume_unit, weight_per_unit, weight_unit,
+        merchant, note, source, sort_index, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       card.id, card.listId, card.name, card.totalPrice, card.packageCount, card.unitsPerPackage,
-      card.contentPerUnit, card.contentUnit, card.merchant, card.note, card.source,
+      card.contentPerUnit, card.contentUnit, card.volumePerUnit, card.volumeUnit, card.weightPerUnit, card.weightUnit,
+      card.merchant, card.note, card.source,
       card.sortIndex, card.createdAt, card.updatedAt
     )
   }

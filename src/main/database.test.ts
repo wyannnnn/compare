@@ -23,14 +23,16 @@ describe('PriceRepository', () => {
     expect(repository.getCards(list.id).map((card) => card.name)).toEqual(['C', 'A', 'B'])
   })
 
-  it('有卡片后锁定计量方式和货币，但允许改名', () => {
+  it('有卡片后仍可调整对比条件并允许改名', () => {
     const list = repository.createList({ name: '纸巾', measureKind: 'count', currencyCode: 'CNY' })
     repository.createCard(list.id, {
       name: '抽纸', totalPrice: '19.9', packageCount: 1, unitsPerPackage: 6,
       contentPerUnit: null, contentUnit: null, merchant: null, note: null, source: 'manual'
     })
     expect(repository.updateList(list.id, { name: '抽纸', measureKind: 'count', currencyCode: 'CNY' }).name).toBe('抽纸')
-    expect(() => repository.updateList(list.id, { name: '抽纸', measureKind: 'weight', currencyCode: 'CNY' })).toThrow('只能修改名称')
+    const updated = repository.updateList(list.id, { name: '抽纸对比', measureKinds: ['count', 'weight'] })
+    expect(updated.measureKinds).toEqual(['count', 'weight'])
+    expect(updated.currencyCode).toBe('CNY')
   })
 
   it('完整导出并事务恢复备份', () => {

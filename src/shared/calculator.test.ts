@@ -45,6 +45,7 @@ describe('findLowestCardIds', () => {
   const card = (id: string, totalPrice: string): PriceCard => ({
     id, listId: 'list', name: id, totalPrice, packageCount: 1, unitsPerPackage: 1,
     contentPerUnit: null, contentUnit: null, merchant: null, note: null, source: 'manual',
+    volumePerUnit: null, volumeUnit: null, weightPerUnit: null, weightUnit: null,
     sortIndex: 0, createdAt: '', updatedAt: ''
   })
 
