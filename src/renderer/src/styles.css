@@ -159,6 +159,13 @@ fieldset.field { min-inline-size: 0; margin-inline: 0; }
 .measure-field { margin-top: 3px; padding: 0; }
 .measure-field legend { padding: 0; }
 .measure-field .segmented { margin-top: 6px; }
+.display-options { margin: 0 0 17px; }
+.display-options summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--card); cursor: pointer; font-size: 13px; font-weight: 700; list-style: none; }
+.display-options summary::-webkit-details-marker { display: none; }
+.display-options summary::after { content: '⌄'; flex: 0 0 auto; color: var(--muted); font-size: 14px; transition: transform .16s ease; }
+.display-options[open] summary::after { transform: rotate(180deg); }
+.display-options summary small { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 500; }
+.display-options .field { margin: 12px 0 0; padding: 0 1px; }
 .list-guidance { display: grid; gap: 8px; margin-top: 2px; padding: 13px 14px; border: 1px solid var(--border); border-radius: 11px; background: color-mix(in srgb, var(--soft) 58%, transparent); user-select: none; }
 .list-guidance p { display: grid; grid-template-columns: 12px minmax(0, 1fr); align-items: start; gap: 8px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
 .list-guidance span { display: grid; width: 12px; height: 18px; place-items: center; color: var(--accent); font-size: 15px; font-weight: 700; line-height: 1; }

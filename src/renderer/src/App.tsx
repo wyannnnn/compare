@@ -965,6 +965,7 @@ function ListDialog({ list, onClose, onSaved }: ListDialogProps): React.JSX.Elem
   const [unit, setUnit] = useState(list ? itemUnit(list) : '')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const unitSummary = unit.trim() ? `当前：${unit.trim()}` : '默认：件'
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -1002,11 +1003,14 @@ function ListDialog({ list, onClose, onSaved }: ListDialogProps): React.JSX.Elem
               ))}
             </div>
           </fieldset>
-          <label className="field">
-            <span>数量单位（可选）</span>
-            <input aria-label="数量单位（可选）" value={unit} maxLength={8} onChange={(event) => setUnit(event.target.value)} placeholder="默认：件" />
-            <small>用于显示数量、基础单价和包装规格，例如“12 个”。</small>
-          </label>
+          <details className="display-options">
+            <summary><span>显示选项</span><small>{unitSummary}</small></summary>
+            <label className="field">
+              <span>数量单位（可选）</span>
+              <input aria-label="数量单位（可选）" value={unit} maxLength={8} onChange={(event) => setUnit(event.target.value)} placeholder="默认：件" />
+              <small>用于显示数量、基础单价和包装规格，例如“12 个”。</small>
+            </label>
+          </details>
           <div className="list-guidance" role="note">
             <p><span aria-hidden="true">•</span>同一清单用于比较同类商品，并统一使用一种比较基准。</p>
             <p><span aria-hidden="true">•</span>更换比较基准后，已有卡片可能需要补充对应规格。</p>
@@ -1142,8 +1146,8 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
               </div>
             ) : <p>填写完整规格后，这里会自动显示单价。</p>}
           </div>
-          <label className="field"><span>购买商家 <em>选填</em></span><input value={form.merchant} onChange={(event) => update('merchant', event.target.value)} placeholder="输入商家名称" /></label>
-          <label className="field"><span>备注 <em>选填</em></span><textarea rows={4} value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="促销条件、配送费用、口味等" /></label>
+          <label className="field"><span>购买商家 <em>可选</em></span><input value={form.merchant} onChange={(event) => update('merchant', event.target.value)} placeholder="输入商家名称" /></label>
+          <label className="field"><span>备注 <em>可选</em></span><textarea rows={4} value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="促销条件、配送费用、口味等" /></label>
           {error && <p className="form-error">{error}</p>}
           <div className="drawer-actions"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={saving || !previewReady}>{saving ? '保存中…' : card ? '保存修改' : '添加到最右侧'}</button></div>
         </form>

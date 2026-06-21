@@ -13,6 +13,7 @@ test('创建矿泉水清单并计算 2 箱 × 24 瓶 × 550ml', async () => {
     const page = await app.firstWindow()
     await page.getByRole('button', { name: '创建第一个清单' }).click()
     await page.getByLabel('清单名称').fill('矿泉水')
+    await page.getByText('显示选项').click()
     await page.getByLabel('数量单位（可选）').fill('瓶')
     await page.getByRole('button', { name: '保存清单' }).click()
     await expect(page.getByRole('heading', { name: '矿泉水' })).toBeVisible()
