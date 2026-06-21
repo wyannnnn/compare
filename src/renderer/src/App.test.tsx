@@ -56,6 +56,7 @@ describe('App', () => {
     expect(screen.queryByLabelText('货币代码')).not.toBeInTheDocument()
     expect(screen.getByText('同一清单用于比较同类商品，并统一使用一种比较基准。')).toBeInTheDocument()
     expect(screen.getByText('更换比较基准后，已有卡片可能需要补充对应规格。')).toBeInTheDocument()
+    expect(screen.getByText('用于显示数量、基础单价和包装规格，例如“12 个”。')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('清单名称'), { target: { value: '矿泉水' } })
     expect(screen.getByLabelText('数量单位（可选）')).toHaveValue('')
     expect(screen.getByPlaceholderText('默认：件')).toBeInTheDocument()
@@ -84,6 +85,23 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     fireEvent.click(screen.getByLabelText('新建清单'))
     expect(screen.getByLabelText('容量')).toBeChecked()
+  })
+
+  it('新建价格卡的规格提示和实时计算同步数量单位', async () => {
+    const list: ComparisonList = {
+      id: 'box-list', name: '礼盒', measureKind: 'count', measureKinds: ['count'],
+      itemUnit: '盒', currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }
+    lists.push(list)
+
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '礼盒' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /添加第一张价格卡/ }))
+    const drawer = screen.getByRole('dialog', { name: '新建价格卡' })
+    expect(within(drawer).getByText('每个包装内含多少盒')).toBeInTheDocument()
+    fireEvent.change(within(drawer).getByPlaceholderText('0.00'), { target: { value: '12' } })
+    expect(within(drawer).getAllByText('每盒').length).toBeGreaterThan(0)
+    expect(within(drawer).getAllByText((_, element) => element?.textContent?.includes('/ 盒') ?? false).length).toBeGreaterThan(0)
   })
 
   it('容量清单展示每升单价', async () => {
