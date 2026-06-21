@@ -212,7 +212,7 @@ describe('App', () => {
     expect(screen.getByText('填写用于修正有效利用量的倍率，基准值为 1')).toBeInTheDocument()
   })
 
-  it('价格卡默认紧凑，展开后显示额外详情', async () => {
+  it('价格卡中间详情区可直接横向对比，右侧抽屉提供完整详情', async () => {
     const list: ComparisonList = {
       id: 'detail-list', name: '鱼油', measureKind: 'weight', measureKinds: ['weight'],
       currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
@@ -229,17 +229,20 @@ describe('App', () => {
 
     render(<App />)
     expect(await screen.findByRole('heading', { name: '鱼油详情卡' })).toBeInTheDocument()
-    expect(screen.queryByText('有效成分')).not.toBeInTheDocument()
-    expect(screen.queryByText('倍率')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /展开详情/ }))
     expect(screen.getByText('有效成分')).toBeInTheDocument()
     expect(screen.getByText('72%')).toBeInTheDocument()
     expect(screen.getByText('倍率')).toBeInTheDocument()
     expect(screen.getByText('1 倍')).toBeInTheDocument()
-    expect(screen.getByText('京东')).toBeInTheDocument()
-    expect(screen.getByText('rTG 版本')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '收起详情' }))
-    expect(screen.queryByText('有效成分')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+    const detailDrawer = screen.getByRole('dialog', { name: '查看详情' })
+    expect(within(detailDrawer).getByText('有效成分')).toBeInTheDocument()
+    expect(within(detailDrawer).getByText('72%')).toBeInTheDocument()
+    expect(within(detailDrawer).getByText('倍率')).toBeInTheDocument()
+    expect(within(detailDrawer).getByText('1 倍')).toBeInTheDocument()
+    expect(within(detailDrawer).getByText('京东')).toBeInTheDocument()
+    expect(within(detailDrawer).getByText('rTG 版本')).toBeInTheDocument()
+    fireEvent.click(within(detailDrawer).getByRole('button', { name: '关闭' }))
+    expect(screen.queryByRole('dialog', { name: '查看详情' })).not.toBeInTheDocument()
   })
 
   it('重量单价可以点击在 kg 和 g 之间切换展示', async () => {

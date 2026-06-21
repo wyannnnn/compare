@@ -5,9 +5,10 @@ import { registerIpcHandlers } from './ipc'
 
 let repository: PriceRepository | null = null
 const diagnosticMode = process.env.BIJIAKA_DIAGNOSTIC === '1'
+const gpuEnabled = process.env.BIJIAKA_ENABLE_GPU === '1'
 const appIconPath = join(__dirname, '../../build/icon.ico')
 
-if (process.env.BIJIAKA_E2E === '1' || diagnosticMode) {
+if (!gpuEnabled || process.env.BIJIAKA_E2E === '1' || diagnosticMode) {
   app.disableHardwareAcceleration()
   app.commandLine.appendSwitch('disable-gpu')
 }
