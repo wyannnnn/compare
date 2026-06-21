@@ -163,8 +163,8 @@ fieldset.field { min-inline-size: 0; margin-inline: 0; }
 .display-options summary { display: flex; width: max-content; align-items: center; justify-content: center; gap: 6px; margin: 0 auto; padding: 6px 12px; border-radius: 999px; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 700; list-style: none; transition: color .16s ease, background .16s ease; }
 .display-options summary:hover { color: var(--accent); background: var(--accent-soft); }
 .display-options summary::-webkit-details-marker { display: none; }
-.display-options summary::after { content: '⌄'; flex: 0 0 auto; color: currentColor; font-size: 13px; transition: transform .16s ease; }
-.display-options[open] summary::after { transform: rotate(180deg); }
+.display-options summary::after { content: '+'; display: grid; width: 15px; height: 15px; flex: 0 0 auto; place-items: center; border: 1px solid color-mix(in srgb, currentColor 38%, transparent); border-radius: 999px; color: currentColor; font-size: 11px; font-weight: 700; line-height: 1; }
+.display-options[open] summary::after { content: '−'; }
 .display-options .field { margin: 9px 0 0; padding: 12px; border: 1px dashed var(--border); border-radius: 12px; background: color-mix(in srgb, var(--soft) 38%, transparent); }
 .list-guidance { display: grid; gap: 8px; margin-top: 2px; padding: 13px 14px; border: 1px solid var(--border); border-radius: 11px; background: color-mix(in srgb, var(--soft) 58%, transparent); user-select: none; }
 .list-guidance p { display: grid; grid-template-columns: 12px minmax(0, 1fr); align-items: start; gap: 8px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }

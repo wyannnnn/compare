@@ -1006,7 +1006,7 @@ function ListDialog({ list, onClose, onSaved }: ListDialogProps): React.JSX.Elem
             <summary><span>显示选项</span></summary>
             <label className="field">
               <span>数量单位（可选）</span>
-              <input aria-label="数量单位（可选）" value={unit} maxLength={8} onChange={(event) => setUnit(event.target.value)} placeholder="例如：瓶、袋、盒、粒" />
+              <input aria-label="数量单位（可选）" value={unit} maxLength={8} onChange={(event) => setUnit(event.target.value)} placeholder="例如：瓶、个" />
               <small>用于显示数量、基础单价和包装规格，例如“12 个”。</small>
             </label>
           </details>

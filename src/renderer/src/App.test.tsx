@@ -62,7 +62,7 @@ describe('App', () => {
     expect(screen.getByText('用于显示数量、基础单价和包装规格，例如“12 个”。')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('清单名称'), { target: { value: '矿泉水' } })
     expect(screen.getByLabelText('数量单位（可选）')).toHaveValue('')
-    expect(screen.getByPlaceholderText('例如：瓶、袋、盒、粒')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('例如：瓶、个')).toBeInTheDocument()
     fireEvent.click(screen.getByText('保存清单'))
     await waitFor(() => expect(api.lists.create).toHaveBeenCalledWith({ name: '矿泉水', measureKind: 'volume', measureKinds: ['volume'], currencyCode: 'CNY' }))
     expect(await screen.findByRole('heading', { name: '矿泉水' })).toBeInTheDocument()
