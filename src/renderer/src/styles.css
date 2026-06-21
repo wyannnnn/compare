@@ -79,7 +79,7 @@ h1, h2, p { margin-top: 0; }
 .sortable.dragging { opacity: .28; }
 .price-card { display: flex; width: 304px; min-height: var(--base-card-height); flex-direction: column; padding: 14px 16px 16px; overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--card); box-shadow: 0 4px 15px rgba(42, 44, 38, .05); }
 .price-card.lowest { border-color: #8bc2a9; box-shadow: 0 0 0 1px #9dd0b7, 0 12px 32px rgba(34, 108, 81, .1); }
-.overlay-card { min-height: 550px; box-shadow: var(--shadow); transform: rotate(1.5deg); }
+.overlay-card { box-shadow: var(--shadow); transform: rotate(1.5deg); }
 .card-topline { display: grid; grid-template-columns: 32px 1fr 32px; align-items: center; min-height: 32px; }
 .drag-handle, .more-button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; color: #999c93; background: transparent; cursor: grab; font-size: 19px; touch-action: none; }
 .drag-handle:active { cursor: grabbing; }
@@ -145,7 +145,12 @@ h1, h2, p { margin-top: 0; }
 .field textarea { resize: vertical; padding: 11px 12px; line-height: 1.5; }
 .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
 .field input:disabled { color: var(--muted); background: var(--soft); }
-.field small, .field-hint { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.field small, .field-hint { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.measure-field .segmented { margin-top: 6px; }
+.list-guidance { display: grid; gap: 8px; margin-top: -2px; padding: 12px 13px; border: 1px solid var(--border); border-radius: 11px; background: color-mix(in srgb, var(--soft) 58%, transparent); }
+.list-guidance p { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 7px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.list-guidance span { display: grid; width: 17px; height: 17px; place-items: center; margin-top: 1px; border-radius: 50%; color: var(--accent); background: var(--accent-soft); font-size: 10px; font-weight: 850; line-height: 1; }
+.list-guidance p:last-child span { color: #8d642f; background: #f3eadb; }
 .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
 .segmented label { padding: 11px 5px; border: 1px solid var(--border); border-radius: 10px; text-align: center; cursor: pointer; font-size: 12px; font-weight: 700; }
 .segmented label.selected { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
@@ -159,6 +164,12 @@ h1, h2, p { margin-top: 0; }
 .delete-dialog-copy h2 { margin: 0 0 9px; font-size: 22px; }
 .delete-dialog-copy p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
 .delete-target { display: block; margin-top: 2px; padding: 2px 0 2px 11px; overflow-wrap: anywhere; border-left: 3px solid var(--danger); color: var(--text); font-size: 20px; font-weight: 850; line-height: 1.4; letter-spacing: -.015em; }
+.delete-card-summary { margin-top: 2px; padding: 15px 16px; border: 1px solid color-mix(in srgb, var(--danger) 18%, var(--border)); border-radius: 14px; background: color-mix(in srgb, var(--danger) 8%, var(--soft)); }
+.delete-card-summary > strong { display: block; overflow-wrap: anywhere; color: var(--text); font-size: 18px; font-weight: 850; line-height: 1.4; letter-spacing: -.015em; }
+.delete-card-prices { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 10px; margin-top: 13px; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--danger) 16%, var(--border)); }
+.delete-card-prices span { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.delete-card-prices small { color: var(--muted); font-size: 10px; font-weight: 700; }
+.delete-card-prices b { overflow-wrap: anywhere; color: var(--text); font-size: 13px; line-height: 1.35; }
 .delete-dialog-copy .delete-dialog-warning { margin-top: 8px; color: var(--danger); font-size: 11px; font-weight: 700; }
 .delete-dialog-actions { grid-column: 1 / -1; margin-top: 26px; }
 

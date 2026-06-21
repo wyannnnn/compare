@@ -38,7 +38,7 @@ const fixedCurrencyCode = 'CNY'
 type DisplayUnit = 'L' | 'ml' | 'kg' | 'g'
 type DeleteTarget =
   | { kind: 'list', id: string, name: string }
-  | { kind: 'card', id: string, name: string }
+  | { kind: 'card', id: string, name: string, totalPrice: string, unitPrice: string }
 
 function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) return '操作失败，请稍后重试'
@@ -94,7 +94,7 @@ function hasMeasure(list: ComparisonList, measureKind: MeasureKind): boolean {
 }
 
 function unitPriceTitle(measureKind: MeasureKind, displayUnit?: DisplayUnit | null): string {
-  if (measureKind === 'count') return '每件 / 每瓶'
+  if (measureKind === 'count') return '每件'
   if (measureKind === 'volume') return displayUnit === 'ml' ? '每毫升' : '每升'
   return displayUnit === 'g' ? '每克' : '每千克'
 }
@@ -252,7 +252,20 @@ export function App(): React.JSX.Element {
   }
 
   const deleteCard = (card: PriceCard): void => {
-    setDeleteTarget({ kind: 'card', id: card.id, name: card.name })
+    if (!selectedList) return
+    const measureKind = activeMeasureKind(selectedList)
+    const result = tryCalculatePrice(card, measureKind)
+    const displayUnit = displayUnitFor(measureKind, displayUnits[selectedList.id])
+    const display = result
+      ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, displayUnit)
+      : null
+    setDeleteTarget({
+      kind: 'card',
+      id: card.id,
+      name: card.name,
+      totalPrice: formatCurrency(card.totalPrice, selectedList.currencyCode),
+      unitPrice: display ? `${formatCurrency(display.value, selectedList.currencyCode, true)} / ${display.unitLabel}` : '待补充'
+    })
   }
 
   const confirmDelete = async (): Promise<void> => {
@@ -419,7 +432,6 @@ export function App(): React.JSX.Element {
         <ListDialog
           key={listDialog === 'edit' ? `edit-${selectedId}` : 'create'}
           list={listDialog === 'edit' ? selectedList : null}
-          hasCards={listDialog === 'edit' && currentCards.length > 0}
           onClose={() => setListDialog(null)}
           onSaved={handleListSaved}
         />
@@ -464,16 +476,39 @@ function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, on
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [activeSize, setActiveSize] = useState<{ width: number, height: number } | null>(null)
+  const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(() => new Set())
   const measureKind = activeMeasureKind(list)
   const lowestIds = useMemo(() => findLowestCardIds(cards, measureKind), [cards, measureKind])
   const activeCard = cards.find((card) => card.id === activeId) ?? null
 
   const handleDragEnd = (event: DragEndEvent): void => {
     setActiveId(null)
+    setActiveSize(null)
     if (!event.over || event.active.id === event.over.id) return
     const oldIndex = cards.findIndex((card) => card.id === event.active.id)
     const newIndex = cards.findIndex((card) => card.id === event.over?.id)
     if (oldIndex >= 0 && newIndex >= 0) onReorder(arrayMove(cards, oldIndex, newIndex))
+  }
+
+  const handleDragStart = (event: DragStartEvent): void => {
+    const rect = event.active.rect.current.initial
+    setActiveId(String(event.active.id))
+    setActiveSize(rect ? { width: rect.width, height: rect.height } : null)
+  }
+
+  const handleDragCancel = (): void => {
+    setActiveId(null)
+    setActiveSize(null)
+  }
+
+  const toggleCardDetails = (cardId: string): void => {
+    setExpandedCardIds((current) => {
+      const next = new Set(current)
+      if (next.has(cardId)) next.delete(cardId)
+      else next.add(cardId)
+      return next
+    })
   }
 
   const handleWheel = (event: React.WheelEvent<HTMLElement>): void => {
@@ -496,8 +531,8 @@ function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, on
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          onDragStart={(event: DragStartEvent) => setActiveId(String(event.active.id))}
-          onDragCancel={() => setActiveId(null)}
+          onDragStart={handleDragStart}
+          onDragCancel={handleDragCancel}
           onDragEnd={handleDragEnd}
         >
           <SortableContext items={cards.map((card) => card.id)} strategy={horizontalListSortingStrategy}>
@@ -508,14 +543,16 @@ function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, on
                 list={list}
                 lowest={lowestIds.has(card.id)}
                 displayUnit={displayUnit}
+                detailsExpanded={expandedCardIds.has(card.id)}
                 onToggleDisplayUnit={onToggleDisplayUnit}
+                onToggleDetails={() => toggleCardDetails(card.id)}
                 onEdit={() => onEdit(card)}
                 onDelete={() => onDelete(card)}
                 onCopyUnitPrice={onCopyUnitPrice}
               />
             ))}
           </SortableContext>
-          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} displayUnit={displayUnit} onToggleDisplayUnit={onToggleDisplayUnit} onCopyUnitPrice={onCopyUnitPrice} overlay />}</DragOverlay>
+          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} displayUnit={displayUnit} detailsExpanded={expandedCardIds.has(activeCard.id)} onToggleDisplayUnit={onToggleDisplayUnit} onCopyUnitPrice={onCopyUnitPrice} overlay overlaySize={activeSize} />}</DragOverlay>
         </DndContext>
       )}
       {cards.length > 0 && (
@@ -539,16 +576,18 @@ interface PriceCardViewProps {
   list: ComparisonList
   lowest: boolean
   displayUnit: DisplayUnit | null
+  detailsExpanded?: boolean
   onToggleDisplayUnit(): void
+  onToggleDetails?(): void
   onCopyUnitPrice(text: string): void
   overlay?: boolean
+  overlaySize?: { width: number, height: number } | null
   dragHandle?: React.ButtonHTMLAttributes<HTMLButtonElement>
   onEdit?(): void
   onDelete?(): void
 }
 
-function PriceCardView({ card, list, lowest, displayUnit, onToggleDisplayUnit, onCopyUnitPrice, overlay, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
-  const [detailsExpanded, setDetailsExpanded] = useState(false)
+function PriceCardView({ card, list, lowest, displayUnit, detailsExpanded = false, onToggleDisplayUnit, onToggleDetails, onCopyUnitPrice, overlay, overlaySize, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
   const measureKind = activeMeasureKind(list)
   const countResult = calculatePrice(card, 'count')
   const specs = contentSpec(card, list)
@@ -565,7 +604,10 @@ function PriceCardView({ card, list, lowest, displayUnit, onToggleDisplayUnit, o
   ].filter(Boolean).length
   const hasExtraDetails = extraDetailCount > 0
   return (
-    <article className={`price-card ${lowest ? 'lowest' : ''} ${detailsExpanded ? 'expanded' : ''} ${overlay ? 'overlay-card' : ''}`}>
+    <article
+      className={`price-card ${lowest ? 'lowest' : ''} ${detailsExpanded ? 'expanded' : ''} ${overlay ? 'overlay-card' : ''}`}
+      style={overlaySize ? { width: overlaySize.width, height: overlaySize.height, minHeight: overlaySize.height, maxHeight: overlaySize.height } : undefined}
+    >
       <div className="card-topline">
         <button className="drag-handle" aria-label={`拖动${card.name}`} title="拖动改变位置" {...dragHandle}>⠿</button>
         {lowest ? <span className="lowest-badge">当前最低</span> : <span />}
@@ -594,7 +636,7 @@ function PriceCardView({ card, list, lowest, displayUnit, onToggleDisplayUnit, o
           type="button"
           className="details-toggle"
           aria-expanded={detailsExpanded}
-          onClick={() => setDetailsExpanded((expanded) => !expanded)}
+          onClick={onToggleDetails}
         >
           {detailsExpanded ? '收起详情' : `展开详情（${extraDetailCount}）`}
         </button>
@@ -658,7 +700,17 @@ function DeleteConfirmDialog({ target, deleting, onCancel, onConfirm }: DeleteCo
         <div className="delete-dialog-icon" aria-hidden="true">!</div>
         <div className="delete-dialog-copy">
           <h2 id="delete-dialog-title">确认删除</h2>
-          <strong className="delete-target" id="delete-dialog-description">{target.name}</strong>
+          {isList ? (
+            <strong className="delete-target" id="delete-dialog-description">{target.name}</strong>
+          ) : (
+            <div className="delete-card-summary" id="delete-dialog-description">
+              <strong>{target.name}</strong>
+              <div className="delete-card-prices">
+                <span><small>总价</small><b>{target.totalPrice}</b></span>
+                <span><small>单价</small><b>{target.unitPrice}</b></span>
+              </div>
+            </div>
+          )}
           <p className="delete-dialog-warning">{isList ? '清单中的全部卡片也会被删除，且无法撤销。' : '删除后无法撤销。'}</p>
         </div>
         <div className="dialog-actions delete-dialog-actions">
@@ -672,12 +724,11 @@ function DeleteConfirmDialog({ target, deleting, onCancel, onConfirm }: DeleteCo
 
 interface ListDialogProps {
   list: ComparisonList | null
-  hasCards: boolean
   onClose(): void
   onSaved(list: ComparisonList, created: boolean): void
 }
 
-function ListDialog({ list, hasCards, onClose, onSaved }: ListDialogProps): React.JSX.Element {
+function ListDialog({ list, onClose, onSaved }: ListDialogProps): React.JSX.Element {
   const [name, setName] = useState(list?.name ?? '')
   const [selectedMeasure, setSelectedMeasure] = useState<MeasureKind>(list ? activeMeasureKind(list) : 'volume')
   const [error, setError] = useState<string | null>(null)
@@ -706,7 +757,7 @@ function ListDialog({ list, hasCards, onClose, onSaved }: ListDialogProps): Reac
         <div className="dialog-heading"><div><div className="eyebrow">{list ? '清单设置' : '新的对比'}</div><h2 id="list-dialog-title">{list ? '编辑清单' : '创建对比清单'}</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭">×</button></div>
         <form onSubmit={submit}>
           <label className="field"><span>清单名称</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="输入要比较的商品类别" required /></label>
-          <fieldset className="field">
+          <fieldset className="field measure-field">
             <legend>比较基准</legend>
             <div className="segmented">
               {measureOrder.map((kind) => (
@@ -716,9 +767,11 @@ function ListDialog({ list, hasCards, onClose, onSaved }: ListDialogProps): Reac
                 </label>
               ))}
             </div>
-            <small>每个清单只使用一种比较基准；如需按其他指标比较，可以新建清单。</small>
           </fieldset>
-          {hasCards && <p className="field-hint">提示：修改比较基准后，已有卡片可能需要编辑补充对应规格。</p>}
+          <div className="list-guidance" role="note">
+            <p><span aria-hidden="true">i</span>同一清单用于比较同类商品，并统一使用一种比较基准。</p>
+            <p><span aria-hidden="true">!</span>更换比较基准后，已有卡片可能需要补充对应规格。</p>
+          </div>
           {error && <p className="form-error">{error}</p>}
           <div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={saving}>{saving ? '保存中…' : '保存清单'}</button></div>
         </form>
