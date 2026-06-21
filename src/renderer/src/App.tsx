@@ -962,7 +962,7 @@ interface ListDialogProps {
 function ListDialog({ list, onClose, onSaved }: ListDialogProps): React.JSX.Element {
   const [name, setName] = useState(list?.name ?? '')
   const [selectedMeasure, setSelectedMeasure] = useState<MeasureKind>(list ? activeMeasureKind(list) : 'volume')
-  const [unit, setUnit] = useState(list ? itemUnit(list) : '件')
+  const [unit, setUnit] = useState(list ? itemUnit(list) : '')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -970,7 +970,9 @@ function ListDialog({ list, onClose, onSaved }: ListDialogProps): React.JSX.Elem
     event.preventDefault()
     setSaving(true)
     setError(null)
-    const draft: ComparisonListDraft = { name, measureKind: selectedMeasure, measureKinds: [selectedMeasure], itemUnit: unit, currencyCode: fixedCurrencyCode }
+    const draft: ComparisonListDraft = { name, measureKind: selectedMeasure, measureKinds: [selectedMeasure], currencyCode: fixedCurrencyCode }
+    const normalizedUnit = unit.trim()
+    if (normalizedUnit) draft.itemUnit = normalizedUnit
     try {
       const saved = list
         ? await window.compareApi.lists.update(list.id, draft)
@@ -1001,9 +1003,9 @@ function ListDialog({ list, onClose, onSaved }: ListDialogProps): React.JSX.Elem
             </div>
           </fieldset>
           <label className="field">
-            <span>商品单位</span>
-            <input aria-label="商品单位" value={unit} maxLength={8} onChange={(event) => setUnit(event.target.value)} placeholder="例如：瓶、袋、盒、粒" required />
-            <small>用于显示总数量、基础单价和包装规格，例如“每瓶价”。</small>
+            <span>数量单位（可选）</span>
+            <input aria-label="数量单位（可选）" value={unit} maxLength={8} onChange={(event) => setUnit(event.target.value)} placeholder="默认：件" />
+            <small>用于显示数量、基础单价和包装规格，例如“12 瓶”“每瓶 / 每个”。不填则默认为“件”。</small>
           </label>
           <div className="list-guidance" role="note">
             <p><span aria-hidden="true">•</span>同一清单用于比较同类商品，并统一使用一种比较基准。</p>

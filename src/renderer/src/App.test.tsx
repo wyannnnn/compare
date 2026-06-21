@@ -21,7 +21,7 @@ describe('App', () => {
             name: draft.name,
             measureKind: measureKinds[0],
             measureKinds,
-            itemUnit: draft.itemUnit ?? '件',
+            itemUnit: draft.itemUnit?.trim() || '件',
             currencyCode: 'CNY',
             createdAt: '2026-01-01',
             updatedAt: '2026-01-01'
@@ -57,9 +57,10 @@ describe('App', () => {
     expect(screen.getByText('同一清单用于比较同类商品，并统一使用一种比较基准。')).toBeInTheDocument()
     expect(screen.getByText('更换比较基准后，已有卡片可能需要补充对应规格。')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('清单名称'), { target: { value: '矿泉水' } })
-    expect(screen.getByLabelText('商品单位')).toHaveValue('件')
+    expect(screen.getByLabelText('数量单位（可选）')).toHaveValue('')
+    expect(screen.getByPlaceholderText('默认：件')).toBeInTheDocument()
     fireEvent.click(screen.getByText('保存清单'))
-    await waitFor(() => expect(api.lists.create).toHaveBeenCalledWith({ name: '矿泉水', measureKind: 'volume', measureKinds: ['volume'], itemUnit: '件', currencyCode: 'CNY' }))
+    await waitFor(() => expect(api.lists.create).toHaveBeenCalledWith({ name: '矿泉水', measureKind: 'volume', measureKinds: ['volume'], currencyCode: 'CNY' }))
     expect(await screen.findByRole('heading', { name: '矿泉水' })).toBeInTheDocument()
   })
 
@@ -76,7 +77,7 @@ describe('App', () => {
     expect(screen.queryByText('人民币')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '清单设置' }))
     expect(screen.getByLabelText('件数')).toBeChecked()
-    expect(screen.getByLabelText('商品单位')).toHaveValue('包')
+    expect(screen.getByLabelText('数量单位（可选）')).toHaveValue('包')
     expect(screen.getByText('同一清单用于比较同类商品，并统一使用一种比较基准。')).toBeInTheDocument()
     expect(screen.getByText('更换比较基准后，已有卡片可能需要补充对应规格。')).toBeInTheDocument()
     expect(screen.queryByText(/另一种算法/)).not.toBeInTheDocument()

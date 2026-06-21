@@ -31,10 +31,10 @@ function optionalText(value: unknown, label: string): string | null {
 
 function normalizeItemUnit(value: unknown): string {
   if (value == null || value === '') return defaultItemUnit
-  if (typeof value !== 'string') throw new ValidationError('商品单位格式不正确')
+  if (typeof value !== 'string') throw new ValidationError('数量单位格式不正确')
   const unit = value.trim()
   if (!unit) return defaultItemUnit
-  if (unit.length > 8) throw new ValidationError('商品单位最多 8 个字')
+  if (unit.length > 8) throw new ValidationError('数量单位最多 8 个字')
   return unit
 }
 
