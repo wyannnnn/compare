@@ -155,6 +155,29 @@ function displayUnitSwitchLabel(measureKind: MeasureKind): string | null {
   return null
 }
 
+function formatRelativeDifferencePercent(value: Decimal): string {
+  if (value.lt(0.01)) return '<0.01%'
+  const fractionDigits = value.gte(100) ? 0 : value.gte(10) ? 1 : 2
+  return `${value.toDecimalPlaces(fractionDigits).toString()}%`
+}
+
+function relativeLowestDifferences(cards: PriceCard[], measureKind: MeasureKind): Map<string, string> {
+  const entries = cards.flatMap((card) => {
+    const result = tryCalculatePrice(card, measureKind)
+    return result ? [{ id: card.id, price: new Decimal(result.normalizedPrice) }] : []
+  })
+  if (entries.length <= 1) return new Map()
+
+  const minimum = Decimal.min(...entries.map((entry) => entry.price))
+  const differences = new Map<string, string>()
+  entries.forEach((entry) => {
+    if (entry.price.lte(minimum)) return
+    const percent = entry.price.minus(minimum).div(minimum).mul(100)
+    differences.set(entry.id, formatRelativeDifferencePercent(percent))
+  })
+  return differences
+}
+
 export function App(): React.JSX.Element {
   const [lists, setLists] = useState<ComparisonList[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -480,6 +503,7 @@ function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, on
   const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(() => new Set())
   const measureKind = activeMeasureKind(list)
   const lowestIds = useMemo(() => findLowestCardIds(cards, measureKind), [cards, measureKind])
+  const priceDifferences = useMemo(() => relativeLowestDifferences(cards, measureKind), [cards, measureKind])
   const activeCard = cards.find((card) => card.id === activeId) ?? null
 
   const handleDragEnd = (event: DragEndEvent): void => {
@@ -513,6 +537,12 @@ function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, on
 
   const handleWheel = (event: React.WheelEvent<HTMLElement>): void => {
     if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+    const scrollableCardContent = (event.target as HTMLElement).closest<HTMLElement>('.card-content')
+    if (scrollableCardContent && scrollableCardContent.scrollHeight > scrollableCardContent.clientHeight) {
+      const canScrollUp = scrollableCardContent.scrollTop > 0
+      const canScrollDown = scrollableCardContent.scrollTop + scrollableCardContent.clientHeight < scrollableCardContent.scrollHeight - 1
+      if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) return
+    }
     event.currentTarget.scrollLeft += event.deltaY
     event.preventDefault()
   }
@@ -542,6 +572,7 @@ function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, on
                 card={card}
                 list={list}
                 lowest={lowestIds.has(card.id)}
+                priceDifferencePercent={lowestIds.has(card.id) ? null : priceDifferences.get(card.id) ?? null}
                 displayUnit={displayUnit}
                 detailsExpanded={expandedCardIds.has(card.id)}
                 onToggleDisplayUnit={onToggleDisplayUnit}
@@ -552,7 +583,7 @@ function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, on
               />
             ))}
           </SortableContext>
-          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} displayUnit={displayUnit} detailsExpanded={expandedCardIds.has(activeCard.id)} onToggleDisplayUnit={onToggleDisplayUnit} onCopyUnitPrice={onCopyUnitPrice} overlay overlaySize={activeSize} />}</DragOverlay>
+          <DragOverlay>{activeCard && <PriceCardView card={activeCard} list={list} lowest={lowestIds.has(activeCard.id)} priceDifferencePercent={lowestIds.has(activeCard.id) ? null : priceDifferences.get(activeCard.id) ?? null} displayUnit={displayUnit} detailsExpanded={expandedCardIds.has(activeCard.id)} onToggleDisplayUnit={onToggleDisplayUnit} onCopyUnitPrice={onCopyUnitPrice} overlay overlaySize={activeSize} />}</DragOverlay>
         </DndContext>
       )}
       {cards.length > 0 && (
@@ -575,6 +606,7 @@ interface PriceCardViewProps {
   card: PriceCard
   list: ComparisonList
   lowest: boolean
+  priceDifferencePercent?: string | null
   displayUnit: DisplayUnit | null
   detailsExpanded?: boolean
   onToggleDisplayUnit(): void
@@ -587,7 +619,7 @@ interface PriceCardViewProps {
   onDelete?(): void
 }
 
-function PriceCardView({ card, list, lowest, displayUnit, detailsExpanded = false, onToggleDisplayUnit, onToggleDetails, onCopyUnitPrice, overlay, overlaySize, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
+function PriceCardView({ card, list, lowest, priceDifferencePercent, displayUnit, detailsExpanded = false, onToggleDisplayUnit, onToggleDetails, onCopyUnitPrice, overlay, overlaySize, dragHandle, onEdit, onDelete }: PriceCardViewProps): React.JSX.Element {
   const measureKind = activeMeasureKind(list)
   const countResult = calculatePrice(card, 'count')
   const specs = contentSpec(card, list)
@@ -608,39 +640,41 @@ function PriceCardView({ card, list, lowest, displayUnit, detailsExpanded = fals
       className={`price-card ${lowest ? 'lowest' : ''} ${detailsExpanded ? 'expanded' : ''} ${overlay ? 'overlay-card' : ''}`}
       style={overlaySize ? { width: overlaySize.width, height: overlaySize.height, minHeight: overlaySize.height, maxHeight: overlaySize.height } : undefined}
     >
-      <div className="card-topline">
-        <button className="drag-handle" aria-label={`拖动${card.name}`} title="拖动改变位置" {...dragHandle}>⠿</button>
-        {lowest ? <span className="lowest-badge">当前最低</span> : <span />}
-        {!overlay && <button className="more-button" aria-label={`编辑${card.name}`} onClick={onEdit}>•••</button>}
-      </div>
-      <div className="card-title"><h2>{card.name}</h2><strong>{formatCurrency(card.totalPrice, list.currencyCode)}</strong></div>
-      <div className="spec-box">
-        <span>包装规格</span>
-        <strong>{card.packageCount} 包 × {card.unitsPerPackage} 件</strong>
-        {specs.map((spec) => <small key={spec}>{spec}</small>)}
-      </div>
-      <dl className="card-details">
-        <div><dt>总件数</dt><dd>{formatDecimal(countResult.totalUnits)} 件</dd></div>
-        <div><dt>基础每件价</dt><dd>{formatCurrency(countResult.pricePerUnit, list.currencyCode, true)}</dd></div>
-        {detailsExpanded && (
-          <>
-            {card.activeIngredientPercent && <div><dt>有效成分</dt><dd>{formatPercent(card.activeIngredientPercent)}</dd></div>}
-            {card.absorptionMultiplier && <div><dt>倍率</dt><dd>{formatMultiplier(card.absorptionMultiplier)}</dd></div>}
-            {card.merchant && <div><dt>购买商家</dt><dd>{card.merchant}</dd></div>}
-            {card.note && <div className="note-row"><dt>备注</dt><dd title={card.note}>{card.note}</dd></div>}
-          </>
+      <div className="card-content">
+        <div className="card-topline">
+          <button className="drag-handle" aria-label={`拖动${card.name}`} title="拖动改变位置" {...dragHandle}>⠿</button>
+          {lowest ? <span className="lowest-badge">当前最低</span> : <span />}
+          {!overlay && <button className="more-button" aria-label={`编辑${card.name}`} onClick={onEdit}>•••</button>}
+        </div>
+        <div className="card-title"><h2>{card.name}</h2><strong>{formatCurrency(card.totalPrice, list.currencyCode)}</strong></div>
+        <div className="spec-box">
+          <span>包装规格</span>
+          <strong>{card.packageCount} 包 × {card.unitsPerPackage} 件</strong>
+          {specs.map((spec) => <small key={spec}>{spec}</small>)}
+        </div>
+        <dl className="card-details">
+          <div><dt>总件数</dt><dd>{formatDecimal(countResult.totalUnits)} 件</dd></div>
+          <div><dt>基础每件价</dt><dd>{formatCurrency(countResult.pricePerUnit, list.currencyCode, true)}</dd></div>
+          {detailsExpanded && (
+            <>
+              {card.activeIngredientPercent && <div><dt>有效成分</dt><dd>{formatPercent(card.activeIngredientPercent)}</dd></div>}
+              {card.absorptionMultiplier && <div><dt>倍率</dt><dd>{formatMultiplier(card.absorptionMultiplier)}</dd></div>}
+              {card.merchant && <div><dt>购买商家</dt><dd>{card.merchant}</dd></div>}
+              {card.note && <div className="note-row"><dt>备注</dt><dd title={card.note}>{card.note}</dd></div>}
+            </>
+          )}
+        </dl>
+        {hasExtraDetails && !overlay && (
+          <button
+            type="button"
+            className="details-toggle"
+            aria-expanded={detailsExpanded}
+            onClick={onToggleDetails}
+          >
+            {detailsExpanded ? '收起详情' : `展开详情（${extraDetailCount}）`}
+          </button>
         )}
-      </dl>
-      {hasExtraDetails && !overlay && (
-        <button
-          type="button"
-          className="details-toggle"
-          aria-expanded={detailsExpanded}
-          onClick={onToggleDetails}
-        >
-          {detailsExpanded ? '收起详情' : `展开详情（${extraDetailCount}）`}
-        </button>
-      )}
+      </div>
       <div className="unit-price-list">
         <div className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
           <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind, displayUnit)}</span>
@@ -667,6 +701,7 @@ function PriceCardView({ card, list, lowest, displayUnit, detailsExpanded = fals
                   {switchLabel}
                 </button>
               )}
+              {priceDifferencePercent && <span className="unit-difference">比最低高 {priceDifferencePercent}</span>}
             </>
           ) : (
             <>

@@ -20,7 +20,7 @@ test('创建矿泉水清单并计算 2 箱 × 24 瓶 × 550ml', async () => {
     await page.getByLabel('商品名称').fill('测试水 550ml')
     await page.getByLabel('总价').fill('48')
     await page.getByLabel('包装数量').fill('2')
-    await page.getByLabel('每包装件数').fill('24')
+    await page.getByLabel('规格').fill('24')
     await page.getByLabel('每件容量').fill('550')
     await expect(page.getByText(/1\.8182 \/ L/)).toBeVisible()
     await page.getByRole('button', { name: '添加到最右侧' }).click()

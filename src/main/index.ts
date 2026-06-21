@@ -5,6 +5,7 @@ import { registerIpcHandlers } from './ipc'
 
 let repository: PriceRepository | null = null
 const diagnosticMode = process.env.BIJIAKA_DIAGNOSTIC === '1'
+const appIconPath = join(__dirname, '../../build/icon.ico')
 
 if (process.env.BIJIAKA_E2E === '1' || diagnosticMode) {
   app.disableHardwareAcceleration()
@@ -19,6 +20,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     title: '比价卡',
+    icon: appIconPath,
     autoHideMenuBar: true,
     backgroundColor: '#f5f4ef',
     webPreferences: {

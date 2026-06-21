@@ -139,6 +139,37 @@ describe('App', () => {
     expect(screen.getByText('卡片已删除')).toBeInTheDocument()
   })
 
+  it('非最低卡片显示相对最低价百分比', async () => {
+    const list: ComparisonList = {
+      id: 'diff-list', name: '饮用水', measureKind: 'volume', measureKinds: ['volume'],
+      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }
+    lists.push(list)
+    vi.mocked(api.cards.getAll).mockResolvedValue([
+      {
+        id: 'low-card', listId: list.id, name: '低价水', totalPrice: '10',
+        packageCount: 1, unitsPerPackage: 1, contentPerUnit: '1', contentUnit: 'L',
+        volumePerUnit: '1', volumeUnit: 'L', weightPerUnit: null, weightUnit: null,
+        activeIngredientPercent: null, absorptionMultiplier: null,
+        merchant: null, note: null, source: 'manual', sortIndex: 0,
+        createdAt: '2026-01-01', updatedAt: '2026-01-01'
+      },
+      {
+        id: 'high-card', listId: list.id, name: '高价水', totalPrice: '15',
+        packageCount: 1, unitsPerPackage: 1, contentPerUnit: '1', contentUnit: 'L',
+        volumePerUnit: '1', volumeUnit: 'L', weightPerUnit: null, weightUnit: null,
+        activeIngredientPercent: null, absorptionMultiplier: null,
+        merchant: null, note: null, source: 'manual', sortIndex: 1,
+        createdAt: '2026-01-01', updatedAt: '2026-01-01'
+      }
+    ])
+
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '低价水' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '高价水' })).toBeInTheDocument()
+    expect(screen.getByText('比最低高 50%')).toBeInTheDocument()
+  })
+
   it('删除清单使用应用内确认对话框', async () => {
     const list: ComparisonList = {
       id: 'delete-list', name: '待删除清单', measureKind: 'count', measureKinds: ['count'],
