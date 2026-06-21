@@ -16,7 +16,7 @@ function ownerWindow(window: BrowserWindow): BrowserWindow | undefined {
 export function registerIpcHandlers(repository: PriceRepository, window: BrowserWindow): void {
   const channels = [
     'lists:get-all', 'lists:create', 'lists:update', 'lists:delete',
-    'cards:get-all', 'cards:create', 'cards:update', 'cards:delete', 'cards:reorder',
+    'cards:get-all', 'cards:create', 'cards:duplicate', 'cards:update', 'cards:delete', 'cards:reorder',
     'backup:export', 'backup:restore'
   ]
   channels.forEach((channel) => ipcMain.removeHandler(channel))
@@ -28,6 +28,7 @@ export function registerIpcHandlers(repository: PriceRepository, window: Browser
 
   ipcMain.handle('cards:get-all', (_event, listId: string) => repository.getCards(listId))
   ipcMain.handle('cards:create', (_event, listId: string, draft: CardDraft) => repository.createCard(listId, draft))
+  ipcMain.handle('cards:duplicate', (_event, id: string) => repository.duplicateCard(id))
   ipcMain.handle('cards:update', (_event, id: string, draft: CardDraft) => repository.updateCard(id, draft))
   ipcMain.handle('cards:delete', (_event, id: string) => repository.deleteCard(id))
   ipcMain.handle('cards:reorder', (_event, listId: string, cardIds: string[]) => repository.reorderCards(listId, cardIds))

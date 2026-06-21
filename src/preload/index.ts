@@ -11,6 +11,7 @@ const compareApi: CompareApi = {
   cards: {
     getAll: (listId) => ipcRenderer.invoke('cards:get-all', listId),
     create: (listId, draft) => ipcRenderer.invoke('cards:create', listId, draft),
+    duplicate: (id) => ipcRenderer.invoke('cards:duplicate', id),
     update: (id, draft) => ipcRenderer.invoke('cards:update', id, draft),
     delete: (id) => ipcRenderer.invoke('cards:delete', id),
     reorder: (listId, cardIds) => ipcRenderer.invoke('cards:reorder', listId, cardIds)

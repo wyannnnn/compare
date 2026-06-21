@@ -14,6 +14,7 @@ import Decimal from 'decimal.js'
 
 const measureKinds = new Set<MeasureKind>(['count', 'volume', 'weight'])
 const sources = new Set<InputSource>(['manual', 'ocr'])
+const defaultItemUnit = '件'
 
 function requiredText(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -28,6 +29,15 @@ function optionalText(value: unknown, label: string): string | null {
   return value.trim() || null
 }
 
+function normalizeItemUnit(value: unknown): string {
+  if (value == null || value === '') return defaultItemUnit
+  if (typeof value !== 'string') throw new ValidationError('商品单位格式不正确')
+  const unit = value.trim()
+  if (!unit) return defaultItemUnit
+  if (unit.length > 8) throw new ValidationError('商品单位最多 8 个字')
+  return unit
+}
+
 export function validateListDraft(value: ComparisonListDraft): ComparisonListDraft {
   const name = requiredText(value?.name, '清单名称')
   const measureKind = normalizeMeasureKind(value)
@@ -35,6 +45,7 @@ export function validateListDraft(value: ComparisonListDraft): ComparisonListDra
     name,
     measureKind,
     measureKinds: [measureKind],
+    itemUnit: normalizeItemUnit(value?.itemUnit),
     // 首版暂时固定人民币。保留字段是为了兼容旧数据和备份格式。
     currencyCode: 'CNY'
   }

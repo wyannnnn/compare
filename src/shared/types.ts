@@ -13,6 +13,7 @@ export interface ComparisonList {
   name: string
   measureKind: MeasureKind
   measureKinds: MeasureKind[]
+  itemUnit: string
   currencyCode: string
   createdAt: string
   updatedAt: string
@@ -22,6 +23,7 @@ export interface ComparisonListDraft {
   name: string
   measureKind?: MeasureKind
   measureKinds?: MeasureKind[]
+  itemUnit?: string
   currencyCode?: string
 }
 
@@ -105,6 +107,7 @@ export interface CompareApi {
   cards: {
     getAll(listId: string): Promise<PriceCard[]>
     create(listId: string, draft: CardDraft): Promise<PriceCard>
+    duplicate(id: string): Promise<PriceCard>
     update(id: string, draft: CardDraft): Promise<PriceCard>
     delete(id: string): Promise<void>
     reorder(listId: string, cardIds: string[]): Promise<PriceCard[]>

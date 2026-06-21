@@ -86,23 +86,28 @@ function activeMeasureKind(list: ComparisonList): MeasureKind {
 }
 
 function measureSummary(list: ComparisonList): string {
-  return unitPriceTitle(activeMeasureKind(list))
+  return unitPriceTitle(activeMeasureKind(list), null, list.itemUnit)
 }
 
 function hasMeasure(list: ComparisonList, measureKind: MeasureKind): boolean {
   return activeMeasureKind(list) === measureKind
 }
 
-function unitPriceTitle(measureKind: MeasureKind, displayUnit?: DisplayUnit | null): string {
-  if (measureKind === 'count') return '每件'
+function itemUnit(list: ComparisonList): string {
+  return list.itemUnit?.trim() || '件'
+}
+
+function unitPriceTitle(measureKind: MeasureKind, displayUnit?: DisplayUnit | null, unit = '件'): string {
+  if (measureKind === 'count') return `每${unit}`
   if (measureKind === 'volume') return displayUnit === 'ml' ? '每毫升' : '每升'
   return displayUnit === 'g' ? '每克' : '每千克'
 }
 
 function contentSpec(card: PriceCard, list: ComparisonList): string[] {
   const specs: string[] = []
-  if (hasMeasure(list, 'volume')) specs.push(card.volumePerUnit && card.volumeUnit ? `${card.volumePerUnit} ${card.volumeUnit}/件` : '容量待补充')
-  if (hasMeasure(list, 'weight')) specs.push(card.weightPerUnit && card.weightUnit ? `${card.weightPerUnit} ${card.weightUnit}/件` : '重量待补充')
+  const unit = itemUnit(list)
+  if (hasMeasure(list, 'volume')) specs.push(card.volumePerUnit && card.volumeUnit ? `${card.volumePerUnit} ${card.volumeUnit}/${unit}` : '容量待补充')
+  if (hasMeasure(list, 'weight')) specs.push(card.weightPerUnit && card.weightUnit ? `${card.weightPerUnit} ${card.weightUnit}/${unit}` : '重量待补充')
   return specs
 }
 
@@ -118,8 +123,12 @@ function displayUnitPrice(
   value: string,
   unitLabel: '件' | 'L' | 'kg',
   adjusted: boolean,
-  displayUnit: DisplayUnit | null
+  displayUnit: DisplayUnit | null,
+  unit = '件'
 ): { value: string, unitLabel: string } {
+  if (unitLabel === '件') {
+    return { value, unitLabel: adjusted ? `有效 ${unit}` : unit }
+  }
   if ((unitLabel === 'L' && displayUnit === 'ml') || (unitLabel === 'kg' && displayUnit === 'g')) {
     return {
       value: new Decimal(value).div(1000).toString(),
@@ -127,6 +136,21 @@ function displayUnitPrice(
     }
   }
   return { value, unitLabel: adjusted ? `有效 ${unitLabel}` : unitLabel }
+}
+
+function normalizedUnitLabel(unitLabel: '件' | 'L' | 'kg', adjusted = false, unit = '件'): string {
+  const label = unitLabel === '件' ? unit : unitLabel
+  return adjusted ? `有效 ${label}` : label
+}
+
+function scrollBoardToRight(): void {
+  const board = document.querySelector<HTMLElement>('.board-scroll')
+  if (!board) return
+  if (typeof board.scrollTo === 'function') {
+    board.scrollTo({ left: 100000, behavior: 'smooth' })
+  } else {
+    board.scrollLeft = 100000
+  }
 }
 
 function displayUnitFor(measureKind: MeasureKind, preferred?: DisplayUnit): DisplayUnit | null {
@@ -283,7 +307,7 @@ export function App(): React.JSX.Element {
     const result = tryCalculatePrice(card, measureKind)
     const displayUnit = displayUnitFor(measureKind, displayUnits[selectedList.id])
     const display = result
-      ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, displayUnit)
+      ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, displayUnit, itemUnit(selectedList))
       : null
     setDeleteTarget({
       kind: 'card',
@@ -324,7 +348,20 @@ export function App(): React.JSX.Element {
     setDetailsCardId(null)
     showNotice(created ? '卡片已添加到最右侧' : '卡片已更新')
     if (created) {
-      window.setTimeout(() => document.querySelector('.board-scroll')?.scrollTo({ left: 100000, behavior: 'smooth' }), 40)
+      window.setTimeout(scrollBoardToRight, 40)
+    }
+  }
+
+  const duplicateCard = async (card: PriceCard): Promise<void> => {
+    try {
+      const copied = await window.compareApi.cards.duplicate(card.id)
+      setCards((current) => [...current, copied])
+      setDetailsCardId(null)
+      setDrawerCard(copied)
+      showNotice('已复制到最右侧，可继续编辑')
+      window.setTimeout(scrollBoardToRight, 40)
+    } catch (error) {
+      showNotice(errorMessage(error))
     }
   }
 
@@ -442,6 +479,7 @@ export function App(): React.JSX.Element {
               onAdd={() => { setDetailsCardId(null); setDrawerCard('new') }}
               onEdit={(card) => { setDetailsCardId(null); setDrawerCard(card) }}
               onShowDetails={(card) => setDetailsCardId(card.id)}
+              onDuplicate={(card) => { void duplicateCard(card) }}
               onDelete={deleteCard}
               onCopyUnitPrice={(text) => { void copyUnitPrice(text) }}
               onReorder={reorderCards}
@@ -483,6 +521,7 @@ export function App(): React.JSX.Element {
           priceDifferencePercent={relativeLowestDifferences(currentCards, activeMeasureKind(selectedList)).get(detailsCard.id) ?? null}
           onClose={() => setDetailsCardId(null)}
           onEdit={() => { setDetailsCardId(null); setDrawerCard(detailsCard) }}
+          onDuplicate={() => { void duplicateCard(detailsCard) }}
           onDelete={() => { setDetailsCardId(null); deleteCard(detailsCard) }}
           onToggleDisplayUnit={() => setDisplayUnits((current) => {
             const measureKind = activeMeasureKind(selectedList)
@@ -514,12 +553,13 @@ interface PriceBoardProps {
   onAdd(): void
   onEdit(card: PriceCard): void
   onShowDetails(card: PriceCard): void
+  onDuplicate(card: PriceCard): void
   onDelete(card: PriceCard): void
   onCopyUnitPrice(text: string): void
   onReorder(cards: PriceCard[]): void
 }
 
-function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, onAdd, onEdit, onShowDetails, onDelete, onCopyUnitPrice, onReorder }: PriceBoardProps): React.JSX.Element {
+function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, onAdd, onEdit, onShowDetails, onDuplicate, onDelete, onCopyUnitPrice, onReorder }: PriceBoardProps): React.JSX.Element {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -596,6 +636,7 @@ function PriceBoard({ list, cards, loading, displayUnit, onToggleDisplayUnit, on
                 onToggleDisplayUnit={onToggleDisplayUnit}
                 onEdit={() => onEdit(card)}
                 onShowDetails={() => onShowDetails(card)}
+                onDuplicate={() => onDuplicate(card)}
                 onDelete={() => onDelete(card)}
                 onCopyUnitPrice={onCopyUnitPrice}
               />
@@ -633,18 +674,39 @@ interface PriceCardViewProps {
   dragHandle?: React.ButtonHTMLAttributes<HTMLButtonElement>
   onEdit?(): void
   onShowDetails?(): void
+  onDuplicate?(): void
   onDelete?(): void
 }
 
-function PriceCardView({ card, list, lowest, priceDifferencePercent, displayUnit, onToggleDisplayUnit, onCopyUnitPrice, overlay, overlaySize, dragHandle, onEdit, onShowDetails, onDelete }: PriceCardViewProps): React.JSX.Element {
+function PriceCardView({ card, list, lowest, priceDifferencePercent, displayUnit, onToggleDisplayUnit, onCopyUnitPrice, overlay, overlaySize, dragHandle, onEdit, onShowDetails, onDuplicate, onDelete }: PriceCardViewProps): React.JSX.Element {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
   const measureKind = activeMeasureKind(list)
   const countResult = calculatePrice(card, 'count')
   const specs = contentSpec(card, list)
   const result = tryCalculatePrice(card, measureKind)
-  const display = result ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, displayUnit) : null
+  const unit = itemUnit(list)
+  const display = result ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, displayUnit, unit) : null
   const switchLabel = result ? displayUnitSwitchLabel(measureKind) : null
   const formattedUnitPrice = display ? formatCurrency(display.value, list.currencyCode, true) : null
   const copyText = formattedUnitPrice && display ? `${formattedUnitPrice} / ${display.unitLabel}` : null
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeOnOutsideClick = (event: MouseEvent): void => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [menuOpen])
+
   return (
     <article
       className={`price-card ${lowest ? 'lowest' : ''} ${overlay ? 'overlay-card' : ''}`}
@@ -653,27 +715,45 @@ function PriceCardView({ card, list, lowest, priceDifferencePercent, displayUnit
       <div className="card-topline">
         <button className="drag-handle" aria-label={`拖动${card.name}`} title="拖动改变位置" {...dragHandle}>⠿</button>
         {lowest ? <span className="lowest-badge">当前最低</span> : <span />}
-        {!overlay && <button className="more-button" aria-label={`编辑${card.name}`} onClick={onEdit}>•••</button>}
+        {!overlay && (
+          <div className="card-menu-wrap" ref={menuRef}>
+            <button
+              className="more-button"
+              aria-label={`${card.name} 更多操作`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              •••
+            </button>
+            {menuOpen && (
+              <div className="card-menu" role="menu">
+                <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onEdit?.() }}>编辑卡片</button>
+                <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onDuplicate?.() }}>复制卡片</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="card-title"><h2>{card.name}</h2><strong>{formatCurrency(card.totalPrice, list.currencyCode)}</strong></div>
       <div className="spec-box">
         <span>包装规格</span>
-        <strong>{card.packageCount} 包 × {card.unitsPerPackage} 件</strong>
+        <strong>{card.packageCount} 包 × {card.unitsPerPackage} {unit}</strong>
         {specs.map((spec) => <small key={spec}>{spec}</small>)}
       </div>
       <dl className="card-details">
-        <div><dt>总件数</dt><dd>{formatDecimal(countResult.totalUnits)} 件</dd></div>
-        <div><dt>基础每件价</dt><dd>{formatCurrency(countResult.pricePerUnit, list.currencyCode, true)}</dd></div>
-        {result && <div><dt>对比总量</dt><dd>{formatDecimal(result.normalizedQuantity)} {result.normalizedUnitLabel}</dd></div>}
+        <div><dt>总数量</dt><dd>{formatDecimal(countResult.totalUnits)} {unit}</dd></div>
+        <div><dt>{`基础每${unit}价`}</dt><dd>{formatCurrency(countResult.pricePerUnit, list.currencyCode, true)}</dd></div>
+        {result && <div><dt>对比总量</dt><dd>{formatDecimal(result.normalizedQuantity)} {normalizedUnitLabel(result.normalizedUnitLabel, false, unit)}</dd></div>}
         {card.activeIngredientPercent && <div><dt>有效成分</dt><dd>{formatPercent(card.activeIngredientPercent)}</dd></div>}
         {card.absorptionMultiplier && <div><dt>倍率</dt><dd>{formatMultiplier(card.absorptionMultiplier)}</dd></div>}
-        {result?.adjusted && <div><dt>有效总量</dt><dd>{formatDecimal(result.effectiveQuantity)} 有效 {result.normalizedUnitLabel}</dd></div>}
+        {result?.adjusted && <div><dt>有效总量</dt><dd>{formatDecimal(result.effectiveQuantity)} {normalizedUnitLabel(result.normalizedUnitLabel, true, unit)}</dd></div>}
         {card.merchant && <div><dt>购买商家</dt><dd title={card.merchant}>{card.merchant}</dd></div>}
         {card.note && <div><dt>备注</dt><dd title={card.note}>{card.note}</dd></div>}
       </dl>
       <div className="unit-price-list">
         <div className={`unit-price ${lowest ? 'lowest-unit' : ''}`}>
-          <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind, displayUnit)}</span>
+          <span>{result?.adjusted ? '有效单价' : unitPriceTitle(measureKind, displayUnit, unit)}</span>
           {result && display ? (
             <>
               <button
@@ -762,6 +842,7 @@ interface CardDetailsDrawerProps {
   priceDifferencePercent?: string | null
   onClose(): void
   onEdit(): void
+  onDuplicate(): void
   onDelete(): void
   onToggleDisplayUnit(): void
   onCopyUnitPrice(text: string): void
@@ -771,11 +852,12 @@ function DetailRow({ label, children }: { label: string, children: React.ReactNo
   return <div className="detail-row"><span>{label}</span><strong>{children}</strong></div>
 }
 
-function CardDetailsDrawer({ list, card, displayUnit, lowest, priceDifferencePercent, onClose, onEdit, onDelete, onToggleDisplayUnit, onCopyUnitPrice }: CardDetailsDrawerProps): React.JSX.Element {
+function CardDetailsDrawer({ list, card, displayUnit, lowest, priceDifferencePercent, onClose, onEdit, onDuplicate, onDelete, onToggleDisplayUnit, onCopyUnitPrice }: CardDetailsDrawerProps): React.JSX.Element {
   const measureKind = activeMeasureKind(list)
   const countResult = calculatePrice(card, 'count')
   const result = tryCalculatePrice(card, measureKind)
-  const display = result ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, displayUnit) : null
+  const unit = itemUnit(list)
+  const display = result ? displayUnitPrice(result.normalizedPrice, result.normalizedUnitLabel, result.adjusted, displayUnit, unit) : null
   const switchLabel = result ? displayUnitSwitchLabel(measureKind) : null
   const formattedUnitPrice = display ? formatCurrency(display.value, list.currencyCode, true) : null
   const copyText = formattedUnitPrice && display ? `${formattedUnitPrice} / ${display.unitLabel}` : null
@@ -807,7 +889,7 @@ function CardDetailsDrawer({ list, card, displayUnit, lowest, priceDifferencePer
           <h3>对比结果</h3>
           {result && display ? (
             <div className={`detail-unit-price ${lowest ? 'lowest-unit' : ''}`}>
-              <span>{result.adjusted ? '有效单价' : unitPriceTitle(measureKind, displayUnit)}</span>
+              <span>{result.adjusted ? '有效单价' : unitPriceTitle(measureKind, displayUnit, unit)}</span>
               <button
                 type="button"
                 className="unit-copy-button"
@@ -833,17 +915,17 @@ function CardDetailsDrawer({ list, card, displayUnit, lowest, priceDifferencePer
           ) : (
             <p className="detail-empty">当前规格还不完整，暂时无法计算统一单价。</p>
           )}
-          <DetailRow label="基础每件价">{formatCurrency(countResult.pricePerUnit, list.currencyCode, true)}</DetailRow>
-          <DetailRow label="总件数">{formatDecimal(countResult.totalUnits)} 件</DetailRow>
-          {result && <DetailRow label="对比总量">{formatDecimal(result.normalizedQuantity)} {result.normalizedUnitLabel}</DetailRow>}
-          {result?.adjusted && <DetailRow label="有效总量">{formatDecimal(result.effectiveQuantity)} 有效 {result.normalizedUnitLabel}</DetailRow>}
+          <DetailRow label={`基础每${unit}价`}>{formatCurrency(countResult.pricePerUnit, list.currencyCode, true)}</DetailRow>
+          <DetailRow label="总数量">{formatDecimal(countResult.totalUnits)} {unit}</DetailRow>
+          {result && <DetailRow label="对比总量">{formatDecimal(result.normalizedQuantity)} {normalizedUnitLabel(result.normalizedUnitLabel, false, unit)}</DetailRow>}
+          {result?.adjusted && <DetailRow label="有效总量">{formatDecimal(result.effectiveQuantity)} {normalizedUnitLabel(result.normalizedUnitLabel, true, unit)}</DetailRow>}
         </section>
 
         <section className="detail-section">
           <h3>包装规格</h3>
           <DetailRow label="包装数量">{card.packageCount} 包</DetailRow>
-          <DetailRow label="规格">{card.unitsPerPackage} 件 / 包</DetailRow>
-          {specs.map((spec) => <DetailRow key={spec} label="单件规格">{spec}</DetailRow>)}
+          <DetailRow label="规格">{card.unitsPerPackage} {unit} / 包</DetailRow>
+          {specs.map((spec) => <DetailRow key={spec} label={`单${unit}规格`}>{spec}</DetailRow>)}
         </section>
 
         {(card.activeIngredientPercent || card.absorptionMultiplier) && (
@@ -863,6 +945,7 @@ function CardDetailsDrawer({ list, card, displayUnit, lowest, priceDifferencePer
 
         <div className="drawer-actions">
           <button type="button" className="danger-quiet-button" onClick={onDelete}>删除</button>
+          <button type="button" className="secondary-button" onClick={onDuplicate}>复制卡片</button>
           <button type="button" className="secondary-button" onClick={onEdit}>编辑卡片</button>
         </div>
       </aside>
@@ -879,6 +962,7 @@ interface ListDialogProps {
 function ListDialog({ list, onClose, onSaved }: ListDialogProps): React.JSX.Element {
   const [name, setName] = useState(list?.name ?? '')
   const [selectedMeasure, setSelectedMeasure] = useState<MeasureKind>(list ? activeMeasureKind(list) : 'volume')
+  const [unit, setUnit] = useState(list ? itemUnit(list) : '件')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -886,7 +970,7 @@ function ListDialog({ list, onClose, onSaved }: ListDialogProps): React.JSX.Elem
     event.preventDefault()
     setSaving(true)
     setError(null)
-    const draft: ComparisonListDraft = { name, measureKind: selectedMeasure, measureKinds: [selectedMeasure], currencyCode: fixedCurrencyCode }
+    const draft: ComparisonListDraft = { name, measureKind: selectedMeasure, measureKinds: [selectedMeasure], itemUnit: unit, currencyCode: fixedCurrencyCode }
     try {
       const saved = list
         ? await window.compareApi.lists.update(list.id, draft)
@@ -916,6 +1000,11 @@ function ListDialog({ list, onClose, onSaved }: ListDialogProps): React.JSX.Elem
               ))}
             </div>
           </fieldset>
+          <label className="field">
+            <span>商品单位</span>
+            <input aria-label="商品单位" value={unit} maxLength={8} onChange={(event) => setUnit(event.target.value)} placeholder="例如：瓶、袋、盒、粒" required />
+            <small>用于显示总数量、基础单价和包装规格，例如“每瓶价”。</small>
+          </label>
           <div className="list-guidance" role="note">
             <p><span aria-hidden="true">•</span>同一清单用于比较同类商品，并统一使用一种比较基准。</p>
             <p><span aria-hidden="true">•</span>更换比较基准后，已有卡片可能需要补充对应规格。</p>
@@ -954,6 +1043,7 @@ interface CardFormState {
 
 function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JSX.Element {
   const measureKind = activeMeasureKind(list)
+  const unit = itemUnit(list)
   const defaultVolumeUnit: VolumeUnit | '' = hasMeasure(list, 'volume') ? 'ml' : ''
   const defaultWeightUnit: WeightUnit | '' = hasMeasure(list, 'weight') ? 'g' : ''
   const [form, setForm] = useState<CardFormState>({
@@ -1023,13 +1113,13 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
           <label className="field"><span>总价</span><div className="input-with-prefix"><span>¥</span><input type="number" min="0" step="any" value={form.totalPrice} onChange={(event) => update('totalPrice', event.target.value)} placeholder="0.00" required /></div><small>这里填写以下全部包装合计的价格</small></label>
           <div className="field-row">
             <label className="field"><span>包装数量</span><input type="number" min="1" step="1" value={form.packageCount} onChange={(event) => update('packageCount', event.target.value)} required /><small>本次购买的包装总数</small></label>
-            <label className="field"><span>规格</span><input type="number" min="1" step="1" value={form.unitsPerPackage} onChange={(event) => update('unitsPerPackage', event.target.value)} required /><small>每个包装内含的商品件数</small></label>
+            <label className="field"><span>规格</span><input type="number" min="1" step="1" value={form.unitsPerPackage} onChange={(event) => update('unitsPerPackage', event.target.value)} required /><small>每个包装内含多少{unit}</small></label>
           </div>
           {hasMeasure(list, 'volume') && (
-            <label className="field"><span>每件容量</span><div className="input-with-select"><input type="number" min="0" step="any" value={form.volumePerUnit} onChange={(event) => update('volumePerUnit', event.target.value)} placeholder="550" required /><select value={form.volumeUnit} onChange={(event) => update('volumeUnit', event.target.value)}><option>ml</option><option>L</option></select></div><small>用于计算每升价格</small></label>
+            <label className="field"><span>每{unit}容量</span><div className="input-with-select"><input type="number" min="0" step="any" value={form.volumePerUnit} onChange={(event) => update('volumePerUnit', event.target.value)} placeholder="550" required /><select value={form.volumeUnit} onChange={(event) => update('volumeUnit', event.target.value)}><option>ml</option><option>L</option></select></div><small>用于计算每升价格</small></label>
           )}
           {hasMeasure(list, 'weight') && (
-            <label className="field"><span>每件重量</span><div className="input-with-select"><input type="number" min="0" step="any" value={form.weightPerUnit} onChange={(event) => update('weightPerUnit', event.target.value)} placeholder="500" required /><select value={form.weightUnit} onChange={(event) => update('weightUnit', event.target.value)}><option>g</option><option>kg</option></select></div><small>用于计算每千克价格</small></label>
+            <label className="field"><span>每{unit}重量</span><div className="input-with-select"><input type="number" min="0" step="any" value={form.weightPerUnit} onChange={(event) => update('weightPerUnit', event.target.value)} placeholder="500" required /><select value={form.weightUnit} onChange={(event) => update('weightUnit', event.target.value)}><option>g</option><option>kg</option></select></div><small>用于计算每千克价格</small></label>
           )}
           <div className="optional-adjustments">
             <label className="option-toggle"><input type="checkbox" checked={form.useActiveIngredient} onChange={(event) => update('useActiveIngredient', event.target.checked)} /> 启用有效成分占比</label>
@@ -1045,8 +1135,8 @@ function CardDrawer({ list, card, onClose, onSaved }: CardDrawerProps): React.JS
             <span>实时计算</span>
             {preview ? (
               <div>
-                <p><small>{unitPriceTitle(measureKind)}</small><strong>{formatCurrency(preview.baseNormalizedPrice, list.currencyCode, true)} / {preview.normalizedUnitLabel}</strong></p>
-                <p><small>{preview.adjusted ? '有效单价' : '对比单价'}</small><strong>{formatCurrency(preview.normalizedPrice, list.currencyCode, true)} / {preview.adjusted ? `有效 ${preview.normalizedUnitLabel}` : preview.normalizedUnitLabel}</strong></p>
+                <p><small>{unitPriceTitle(measureKind, null, unit)}</small><strong>{formatCurrency(preview.baseNormalizedPrice, list.currencyCode, true)} / {normalizedUnitLabel(preview.normalizedUnitLabel, false, unit)}</strong></p>
+                <p><small>{preview.adjusted ? '有效单价' : '对比单价'}</small><strong>{formatCurrency(preview.normalizedPrice, list.currencyCode, true)} / {normalizedUnitLabel(preview.normalizedUnitLabel, preview.adjusted, unit)}</strong></p>
               </div>
             ) : <p>填写完整规格后，这里会自动显示单价。</p>}
           </div>

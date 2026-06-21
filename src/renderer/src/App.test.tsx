@@ -21,6 +21,7 @@ describe('App', () => {
             name: draft.name,
             measureKind: measureKinds[0],
             measureKinds,
+            itemUnit: draft.itemUnit ?? '件',
             currencyCode: 'CNY',
             createdAt: '2026-01-01',
             updatedAt: '2026-01-01'
@@ -33,7 +34,7 @@ describe('App', () => {
       },
       cards: {
         getAll: vi.fn(async () => []),
-        create: vi.fn(), update: vi.fn(), delete: vi.fn(), reorder: vi.fn()
+        create: vi.fn(), duplicate: vi.fn(), update: vi.fn(), delete: vi.fn(), reorder: vi.fn()
       },
       backup: { export: vi.fn(), restore: vi.fn() }
     }
@@ -56,24 +57,26 @@ describe('App', () => {
     expect(screen.getByText('同一清单用于比较同类商品，并统一使用一种比较基准。')).toBeInTheDocument()
     expect(screen.getByText('更换比较基准后，已有卡片可能需要补充对应规格。')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('清单名称'), { target: { value: '矿泉水' } })
+    expect(screen.getByLabelText('商品单位')).toHaveValue('件')
     fireEvent.click(screen.getByText('保存清单'))
-    await waitFor(() => expect(api.lists.create).toHaveBeenCalledWith({ name: '矿泉水', measureKind: 'volume', measureKinds: ['volume'], currencyCode: 'CNY' }))
+    await waitFor(() => expect(api.lists.create).toHaveBeenCalledWith({ name: '矿泉水', measureKind: 'volume', measureKinds: ['volume'], itemUnit: '件', currencyCode: 'CNY' }))
     expect(await screen.findByRole('heading', { name: '矿泉水' })).toBeInTheDocument()
   })
 
   it('清单设置读取当前基准，新建清单使用默认容量', async () => {
     const list: ComparisonList = {
       id: 'count-list', name: '抽纸', measureKind: 'count', measureKinds: ['count'],
-      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+      itemUnit: '包', currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }
     lists.push(list)
 
     render(<App />)
     expect(await screen.findByRole('heading', { name: '抽纸' })).toBeInTheDocument()
-    expect(screen.getAllByText('每件')).toHaveLength(2)
+    expect(screen.getAllByText('每包')).toHaveLength(2)
     expect(screen.queryByText('人民币')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '清单设置' }))
     expect(screen.getByLabelText('件数')).toBeChecked()
+    expect(screen.getByLabelText('商品单位')).toHaveValue('包')
     expect(screen.getByText('同一清单用于比较同类商品，并统一使用一种比较基准。')).toBeInTheDocument()
     expect(screen.getByText('更换比较基准后，已有卡片可能需要补充对应规格。')).toBeInTheDocument()
     expect(screen.queryByText(/另一种算法/)).not.toBeInTheDocument()
@@ -85,7 +88,7 @@ describe('App', () => {
   it('容量清单展示每升单价', async () => {
     const list: ComparisonList = {
       id: 'water-list', name: '矿泉水', measureKind: 'volume', measureKinds: ['volume'],
-      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+      itemUnit: '瓶', currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }
     lists.push(list)
     vi.mocked(api.cards.getAll).mockResolvedValue([{
@@ -104,6 +107,8 @@ describe('App', () => {
     expect(screen.getAllByText('每升').length).toBeGreaterThan(0)
     expect(screen.getByText('/ L')).toBeInTheDocument()
     expect(screen.getByText(/1\.8182/)).toBeInTheDocument()
+    expect(screen.getByText('2 包 × 24 瓶')).toBeInTheDocument()
+    expect(screen.getByText('550 ml/瓶')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /复制单价/ }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/^¥1\.8182 \/ L$/)))
     expect(screen.getByText('已复制单价')).toBeInTheDocument()
@@ -142,7 +147,7 @@ describe('App', () => {
   it('非最低卡片显示相对最低价百分比', async () => {
     const list: ComparisonList = {
       id: 'diff-list', name: '饮用水', measureKind: 'volume', measureKinds: ['volume'],
-      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+      itemUnit: '瓶', currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }
     lists.push(list)
     vi.mocked(api.cards.getAll).mockResolvedValue([
@@ -170,10 +175,45 @@ describe('App', () => {
     expect(screen.getByText('比最低高 50%')).toBeInTheDocument()
   })
 
+  it('三点菜单可以在当前清单复制卡片并打开编辑抽屉', async () => {
+    const list: ComparisonList = {
+      id: 'copy-list', name: '矿泉水', measureKind: 'volume', measureKinds: ['volume'],
+      itemUnit: '瓶', currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }
+    const sourceCard = {
+      id: 'source-card', listId: list.id, name: '农夫山泉', totalPrice: '33',
+      packageCount: 1, unitsPerPackage: 12, contentPerUnit: '1.5', contentUnit: 'L' as const,
+      volumePerUnit: '1.5', volumeUnit: 'L' as const, weightPerUnit: null, weightUnit: null,
+      activeIngredientPercent: null, absorptionMultiplier: null,
+      merchant: '京东', note: null, source: 'manual' as const, sortIndex: 0,
+      createdAt: '2026-01-01', updatedAt: '2026-01-01'
+    }
+    lists.push(list)
+    vi.mocked(api.cards.getAll).mockResolvedValue([sourceCard])
+    vi.mocked(api.cards.duplicate).mockResolvedValue({
+      ...sourceCard,
+      id: 'copy-card',
+      name: '农夫山泉 副本',
+      sortIndex: 1,
+      createdAt: '2026-01-02',
+      updatedAt: '2026-01-02'
+    })
+
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '农夫山泉' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '农夫山泉 更多操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '复制卡片' }))
+
+    await waitFor(() => expect(api.cards.duplicate).toHaveBeenCalledWith('source-card'))
+    expect(screen.getByText('已复制到最右侧，可继续编辑')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '编辑价格卡' })).toBeInTheDocument()
+    expect(screen.getByDisplayValue('农夫山泉 副本')).toBeInTheDocument()
+  })
+
   it('删除清单使用应用内确认对话框', async () => {
     const list: ComparisonList = {
       id: 'delete-list', name: '待删除清单', measureKind: 'count', measureKinds: ['count'],
-      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+      itemUnit: '件', currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }
     lists.push(list)
 
@@ -192,7 +232,7 @@ describe('App', () => {
   it('有效成分和倍率默认折叠，勾选后才显示输入框', async () => {
     const list: ComparisonList = {
       id: 'fish-list', name: '鱼油', measureKind: 'weight', measureKinds: ['weight'],
-      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+      itemUnit: '瓶', currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }
     lists.push(list)
 
@@ -201,7 +241,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /添加第一张价格卡/ }))
     expect(screen.getByPlaceholderText('输入商品名称')).toBeInTheDocument()
     expect(screen.getByText('本次购买的包装总数')).toBeInTheDocument()
-    expect(screen.getByText('每个包装内含的商品件数')).toBeInTheDocument()
+    expect(screen.getByText('每个包装内含多少瓶')).toBeInTheDocument()
     expect(screen.getByText('规格')).toBeInTheDocument()
     expect(screen.queryByText(/农夫山泉|每箱|鱼油 DHA/)).not.toBeInTheDocument()
     expect(screen.queryByText('填写商品标注的有效成分百分比')).not.toBeInTheDocument()
@@ -215,7 +255,7 @@ describe('App', () => {
   it('价格卡中间详情区可直接横向对比，右侧抽屉提供完整详情', async () => {
     const list: ComparisonList = {
       id: 'detail-list', name: '鱼油', measureKind: 'weight', measureKinds: ['weight'],
-      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+      itemUnit: '瓶', currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }
     lists.push(list)
     vi.mocked(api.cards.getAll).mockResolvedValue([{
@@ -248,7 +288,7 @@ describe('App', () => {
   it('重量单价可以点击在 kg 和 g 之间切换展示', async () => {
     const list: ComparisonList = {
       id: 'oil-list', name: '鱼油', measureKind: 'weight', measureKinds: ['weight'],
-      currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
+      itemUnit: '瓶', currencyCode: 'CNY', createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }
     lists.push(list)
     vi.mocked(api.cards.getAll).mockResolvedValue([{
@@ -275,12 +315,12 @@ describe('App', () => {
   it('从件数清单切换到重量清单时不会用旧卡片执行重量计算', async () => {
     const countList: ComparisonList = {
       id: 'count-list', name: '抽纸', measureKind: 'count', currencyCode: 'CNY',
-      measureKinds: ['count'],
+      measureKinds: ['count'], itemUnit: '包',
       createdAt: '2026-01-01', updatedAt: '2026-01-01'
     }
     const weightList: ComparisonList = {
       id: 'weight-list', name: '大米', measureKind: 'weight', currencyCode: 'CNY',
-      measureKinds: ['weight'],
+      measureKinds: ['weight'], itemUnit: '袋',
       createdAt: '2026-01-02', updatedAt: '2026-01-02'
     }
     lists.push(countList, weightList)

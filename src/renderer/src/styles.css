@@ -85,6 +85,10 @@ h1, h2, p { margin-top: 0; }
 .drag-handle:active { cursor: grabbing; }
 .drag-handle:hover, .more-button:hover { color: var(--text); background: var(--soft); }
 .more-button { cursor: pointer; font-size: 14px; letter-spacing: 1px; }
+.card-menu-wrap { position: relative; justify-self: end; }
+.card-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 15; display: grid; min-width: 106px; gap: 3px; padding: 5px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); box-shadow: 0 12px 28px rgba(37, 42, 34, .12); }
+.card-menu button { width: 100%; padding: 8px 9px; border: 0; border-radius: 8px; color: var(--text); background: transparent; cursor: pointer; font-size: 12px; font-weight: 700; text-align: left; white-space: nowrap; }
+.card-menu button:hover { background: var(--soft); }
 .lowest-badge { justify-self: center; padding: 5px 10px; border-radius: 20px; color: var(--accent); background: var(--accent-soft); font-size: 11px; font-weight: 700; }
 .card-title { flex: 0 0 auto; padding: 13px 3px 15px; }
 .card-title h2 { display: -webkit-box; min-height: 44px; margin-bottom: 5px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 18px; font-weight: 700; line-height: 1.3; letter-spacing: -.01em; }

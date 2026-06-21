@@ -59,6 +59,7 @@ function listFromRow(row: DbRow): ComparisonList {
     name: String(row.name),
     measureKind: fallbackMeasureKind,
     measureKinds: [fallbackMeasureKind],
+    itemUnit: row.item_unit == null || String(row.item_unit).trim() === '' ? '件' : String(row.item_unit),
     currencyCode: String(row.currency_code),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
@@ -116,6 +117,7 @@ export class PriceRepository {
         name TEXT NOT NULL,
         measure_kind TEXT NOT NULL CHECK (measure_kind IN ('count', 'volume', 'weight')),
         measure_kinds TEXT NOT NULL DEFAULT 'volume',
+        item_unit TEXT NOT NULL DEFAULT '件',
         currency_code TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -147,7 +149,9 @@ export class PriceRepository {
       INSERT OR IGNORE INTO app_meta(key, value) VALUES ('schema_version', '1');
     `)
     this.addColumnIfMissing('comparison_lists', 'measure_kinds', 'TEXT')
+    this.addColumnIfMissing('comparison_lists', 'item_unit', "TEXT NOT NULL DEFAULT '件'")
     this.db.prepare("UPDATE comparison_lists SET measure_kinds = measure_kind WHERE measure_kinds IS NULL OR measure_kinds = ''").run()
+    this.db.prepare("UPDATE comparison_lists SET item_unit = '件' WHERE item_unit IS NULL OR item_unit = ''").run()
     this.addColumnIfMissing('price_cards', 'volume_per_unit', 'TEXT')
     this.addColumnIfMissing('price_cards', 'volume_unit', "TEXT CHECK (volume_unit IS NULL OR volume_unit IN ('ml', 'L'))")
     this.addColumnIfMissing('price_cards', 'weight_per_unit', 'TEXT')
@@ -156,7 +160,7 @@ export class PriceRepository {
     this.addColumnIfMissing('price_cards', 'absorption_multiplier', 'TEXT')
     this.db.prepare("UPDATE price_cards SET volume_per_unit = content_per_unit, volume_unit = content_unit WHERE content_unit IN ('ml', 'L') AND volume_per_unit IS NULL").run()
     this.db.prepare("UPDATE price_cards SET weight_per_unit = content_per_unit, weight_unit = content_unit WHERE content_unit IN ('g', 'kg') AND weight_per_unit IS NULL").run()
-    this.db.prepare("UPDATE app_meta SET value = '3' WHERE key = 'schema_version'").run()
+    this.db.prepare("UPDATE app_meta SET value = '4' WHERE key = 'schema_version'").run()
   }
 
   private addColumnIfMissing(table: string, column: string, definition: string): void {
@@ -182,9 +186,9 @@ export class PriceRepository {
     const now = new Date().toISOString()
     const list: ComparisonList = { id: randomUUID(), ...draft, createdAt: now, updatedAt: now }
     this.db.prepare(`
-      INSERT INTO comparison_lists(id, name, measure_kind, measure_kinds, currency_code, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(list.id, list.name, list.measureKind, serializeMeasureKinds(list.measureKinds), list.currencyCode, list.createdAt, list.updatedAt)
+      INSERT INTO comparison_lists(id, name, measure_kind, measure_kinds, item_unit, currency_code, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(list.id, list.name, list.measureKind, serializeMeasureKinds(list.measureKinds), list.itemUnit, list.currencyCode, list.createdAt, list.updatedAt)
     return list
   }
 
@@ -193,8 +197,8 @@ export class PriceRepository {
     const draft = validateListDraft(input)
     const updatedAt = new Date().toISOString()
     this.db.prepare(`
-      UPDATE comparison_lists SET name = ?, measure_kind = ?, measure_kinds = ?, currency_code = ?, updated_at = ? WHERE id = ?
-    `).run(draft.name, draft.measureKind, serializeMeasureKinds(draft.measureKinds ?? [draft.measureKind ?? current.measureKind]), draft.currencyCode, updatedAt, id)
+      UPDATE comparison_lists SET name = ?, measure_kind = ?, measure_kinds = ?, item_unit = ?, currency_code = ?, updated_at = ? WHERE id = ?
+    `).run(draft.name, draft.measureKind, serializeMeasureKinds(draft.measureKinds ?? [draft.measureKind ?? current.measureKind]), draft.itemUnit, draft.currencyCode, updatedAt, id)
     return { ...current, ...draft, updatedAt }
   }
 
@@ -220,6 +224,24 @@ export class PriceRepository {
     const now = new Date().toISOString()
     const card: PriceCard = {
       id: randomUUID(), listId, ...draft, sortIndex: Number(maxRow.max_sort) + 1, createdAt: now, updatedAt: now
+    }
+    this.insertCard(card)
+    return card
+  }
+
+  duplicateCard(id: string): PriceCard {
+    const current = this.requireCard(id)
+    this.requireList(current.listId)
+    const maxRow = this.db.prepare('SELECT COALESCE(MAX(sort_index), -1) AS max_sort FROM price_cards WHERE list_id = ?').get(current.listId) as DbRow
+    const now = new Date().toISOString()
+    const card: PriceCard = {
+      ...current,
+      id: randomUUID(),
+      name: `${current.name} 副本`,
+      source: 'manual',
+      sortIndex: Number(maxRow.max_sort) + 1,
+      createdAt: now,
+      updatedAt: now
     }
     this.insertCard(card)
     return card
@@ -278,11 +300,11 @@ export class PriceRepository {
     this.transaction(() => {
       this.db.exec('DELETE FROM price_cards; DELETE FROM comparison_lists;')
       const listStatement = this.db.prepare(`
-        INSERT INTO comparison_lists(id, name, measure_kind, measure_kinds, currency_code, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO comparison_lists(id, name, measure_kind, measure_kinds, item_unit, currency_code, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
       snapshot.lists.forEach((list) => listStatement.run(
-        list.id, list.name, list.measureKind, serializeMeasureKinds(list.measureKinds), list.currencyCode, list.createdAt, list.updatedAt
+        list.id, list.name, list.measureKind, serializeMeasureKinds(list.measureKinds), list.itemUnit ?? '件', list.currencyCode, list.createdAt, list.updatedAt
       ))
       snapshot.cards.forEach((card) => this.insertCard(card))
     })
