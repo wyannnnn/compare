@@ -303,6 +303,12 @@ async function expectCardOrder(page: Page, expected: string[]): Promise<void> {
   await expect.poll(() => cardOrder(page)).toEqual(expected)
 }
 
+function sortableDragHandle(page: Page, cardName: string): Locator {
+  return page
+    .locator('.sortable', { has: page.getByRole('heading', { name: cardName, exact: true }) })
+    .locator('.drag-handle')
+}
+
 async function dragCard(page: Page, sourceName: string, targetName: string): Promise<void> {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const order = await cardOrder(page)
@@ -311,7 +317,7 @@ async function dragCard(page: Page, sourceName: string, targetName: string): Pro
     if (sourceIndex < 0 || targetIndex < 0) throw new Error('无法定位拖拽卡片')
     if (sourceIndex + 1 === targetIndex) return
 
-    const source = page.getByLabel(`拖动${sourceName}`)
+    const source = sortableDragHandle(page, sourceName)
     const key = sourceIndex > targetIndex ? 'ArrowLeft' : 'ArrowRight'
     const steps = sourceIndex > targetIndex
       ? sourceIndex - targetIndex

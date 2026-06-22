@@ -6,5 +6,6 @@ test-results/
 playwright-report/
 *.log
 .diag-data/
+.tmp-electron-*/
 .DS_Store
 未实现.md

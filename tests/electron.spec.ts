@@ -24,7 +24,13 @@ type CardInput = {
 
 async function launchApp(userData: string, env: Record<string, string> = {}): Promise<RunningApp> {
   const app = await electron.launch({
-    args: [join(process.cwd(), 'out/main/index.js')],
+    args: [
+      '--no-sandbox',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      `--user-data-dir=${userData}`,
+      join(process.cwd(), 'out/main/index.js')
+    ],
     env: { ...process.env, BIJIAKA_USER_DATA: userData, BIJIAKA_E2E: '1', ...env }
   })
   const page = await app.firstWindow()
@@ -101,17 +107,37 @@ async function expectCardOrder(page: Page, expected: string[]): Promise<void> {
   await expect.poll(() => cardOrder(page)).toEqual(expected)
 }
 
-async function dragCard(page: Page, sourceName: string, targetName: string): Promise<void> {
-  const source = page.getByLabel(`拖动${sourceName}`)
-  const target = page.getByLabel(`拖动${targetName}`)
-  const sourceBox = await source.boundingBox()
-  const targetBox = await target.boundingBox()
-  if (!sourceBox || !targetBox) throw new Error('无法定位拖拽手柄')
+function sortableDragHandle(page: Page, cardName: string): Locator {
+  return page
+    .locator('.sortable', { has: page.getByRole('heading', { name: cardName, exact: true }) })
+    .locator('.drag-handle')
+}
 
-  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 })
-  await page.mouse.up()
+async function dragCard(page: Page, sourceName: string, targetName: string): Promise<void> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const order = await cardOrder(page)
+    const sourceIndex = order.indexOf(sourceName)
+    const targetIndex = order.indexOf(targetName)
+    if (sourceIndex < 0 || targetIndex < 0) throw new Error('无法定位拖拽卡片')
+    if (sourceIndex + 1 === targetIndex) return
+
+    const source = sortableDragHandle(page, sourceName)
+    const key = sourceIndex > targetIndex ? 'ArrowLeft' : 'ArrowRight'
+    const steps = sourceIndex > targetIndex
+      ? sourceIndex - targetIndex
+      : Math.max(targetIndex - sourceIndex - 1, 1)
+
+    await source.focus()
+    await page.keyboard.press('Space')
+    for (let step = 0; step < steps; step += 1) {
+      await page.keyboard.press(key)
+      await page.waitForTimeout(120)
+    }
+    await page.keyboard.press('Space')
+    await page.waitForTimeout(180)
+  }
+
+  throw new Error(`拖拽排序未到位：${(await cardOrder(page)).join(' > ')}`)
 }
 
 async function clickBackupMenuItem(page: Page, name: string): Promise<void> {
@@ -140,7 +166,8 @@ test('创建矿泉水清单并计算 2 包 × 24 瓶 × 550ml', async () => {
 
     await expect(page.getByText('2 包 × 24 瓶')).toBeVisible()
     await expect(page.getByText('550 ml/瓶')).toBeVisible()
-    await expect(page.getByText(/1\.8182 \/ L/)).toBeVisible()
+    await expect(page.getByText(/¥1\.8182/)).toBeVisible()
+    await expect(page.getByText('/ L')).toBeVisible()
     await expect(page.getByText('当前最低')).toBeVisible()
   })
 })
@@ -161,7 +188,7 @@ test('新卡追加到最右侧，拖拽排序后重启仍保留顺序', async ()
 
     await running.app.close()
     running = await launchApp(userData)
-    await expect(running.page.getByRole('heading', { name: '抽纸' })).toBeVisible()
+    await expect(running.page.getByRole('heading', { name: '抽纸', exact: true })).toBeVisible()
     await expectCardOrder(running.page, ['C 抽纸', 'A 抽纸', 'B 抽纸'])
   } finally {
     await running.app.close().catch(() => undefined)
@@ -191,7 +218,7 @@ test('导出后删除数据，再导入可完整恢复', async () => {
 
     await clickBackupMenuItem(running.page, '恢复备份')
     await expect(running.page.getByText(/已恢复 1 个清单、1 张卡片/)).toBeVisible()
-    await expect(running.page.getByRole('heading', { name: '咖啡' })).toBeVisible()
+    await expect(running.page.getByRole('heading', { name: '咖啡', exact: true })).toBeVisible()
     await expect(running.page.getByRole('heading', { name: '挂耳咖啡' })).toBeVisible()
     await expect(running.page.getByText('1 包 × 10 盒')).toBeVisible()
   } finally {

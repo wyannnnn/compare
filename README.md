@@ -64,6 +64,14 @@ npm run pack:portable # 生成 Windows 免安装目录
 npm run dist:win      # 生成 Windows 安装包
 ```
 
+Windows 下也可以直接双击：
+
+```text
+测试比价卡.bat
+```
+
+里面可以选择日常 UI E2E、真实 Electron E2E 或基础检查组合。
+
 默认 E2E 会打开构建后的界面并注入测试用 `compareApi`，自动验证创建清单、添加卡片、拖拽排序和备份恢复等主流程。它不会启动 Electron 主进程，因此不会触发当前 Windows 环境下偶发的 `electron.exe unknown software exception` 弹窗。
 
 真实 Electron 诊断测试需要手动开启：
@@ -74,7 +82,7 @@ npm run test:e2e:electron
 Remove-Item Env:\BIJIAKA_RUN_ELECTRON_E2E
 ```
 
-真实 Electron E2E 会使用临时 `userData` 目录，不会读写你的真实应用数据。
+真实 Electron E2E 会使用临时 `userData` 目录，不会读写你的真实应用数据。测试启动时会额外传入临时 `--user-data-dir` 和测试专用 `--no-sandbox`，用于避免受限测试环境下 Chromium 子进程无法启动导致的 Windows native 异常；正常应用启动仍保持沙箱配置。
 
 macOS 和 Linux 打包脚本：
 

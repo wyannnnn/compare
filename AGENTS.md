@@ -23,6 +23,14 @@ npm run test:e2e:electron
 npm run pack:portable
 ```
 
+Windows 可直接双击：
+
+```text
+测试比价卡.bat
+```
+
+该脚本提供日常 UI E2E、真实 Electron E2E 和基础检查组合，并会正确保留测试退出码。
+
 Windows 免安装启动入口：
 
 ```text
@@ -58,7 +66,7 @@ npm run test:e2e:electron
 Remove-Item Env:\BIJIAKA_RUN_ELECTRON_E2E
 ```
 
-当前 Windows + Electron 42 + Playwright 组合在测试启动/退出 Electron 时偶发 `electron.exe unknown software exception` 弹窗；用户正常启动应用未复现该问题。因此真实 Electron E2E 只作为诊断命令，不作为默认自动检查。
+真实 Electron E2E 会使用临时 `userData`，并在 Electron 启动参数里传入临时 `--user-data-dir` 与测试专用 `--no-sandbox`。原因是受限测试环境中 Chromium 子进程沙箱可能无法启动，表现为 Windows `electron.exe unknown software exception (0x80000003)`；正常应用启动不应使用 `--no-sandbox`。
 
 如果只是文档改动，可以不跑完整测试，但提交前仍需检查 `git diff --check`。
 
