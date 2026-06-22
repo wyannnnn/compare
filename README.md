@@ -8,14 +8,17 @@
 
 - 管理多个独立的对比清单。
 - 每个清单选择一种比较基准：件数、容量或重量。
+- 清单可设置可选的数量单位，默认使用“件”，用于数量、基础单价和包装规格展示。
 - 录入商品名称、总价、包装数量、规格、商家和备注。
 - 容量统一换算为升，支持 `L/ml` 显示切换。
 - 重量统一换算为千克，支持 `kg/g` 显示切换。
 - 可选使用有效成分占比和倍率修正有效单价。
 - 自动标记最低统一单价；四位小数下相同的最低价会同时标记。
+- 非最低卡片会显示相对最低价差异，例如“比最低高 18%”。
 - 卡片横向排列，可拖动排序；顺序会自动保存。
 - 新卡片保存后追加到最右侧。
 - 点击“单价 + 当前单位”即可复制该数值。
+- 卡片三点菜单支持编辑和复制；复制会追加到当前清单最右侧。
 - 本地 SQLite 持久化，以及 JSON 备份和恢复。
 - 跟随系统浅色或深色主题。
 
@@ -45,6 +48,8 @@ npm run pack:portable
 
 `release\win-unpacked` 是免安装目录，可以整体复制到其他 Windows 电脑使用。
 
+Windows 程序图标已配置为 `build/icon.ico`，便携版和安装包会使用项目图标。
+
 ## 开发
 
 ```powershell
@@ -58,8 +63,8 @@ npm run dev
 npm test          # 单元测试、数据层测试和组件测试
 npm run typecheck # TypeScript 类型检查
 npm run build     # 生成生产构建到 out 目录
-npm run test:e2e  # 自动 UI 端到端测试
-npm run test:e2e:electron # 真实 Electron 诊断测试，默认跳过
+npm run test:e2e  # 浏览器 UI 端到端测试，注入测试用 compareApi
+npm run test:e2e:electron # 真实 Electron E2E；直接运行默认跳过
 npm run pack:portable # 生成 Windows 免安装目录
 npm run dist:win      # 生成 Windows 安装包
 ```
@@ -70,12 +75,12 @@ Windows 下也可以直接双击：
 测试比价卡.bat
 ```
 
-里面可以选择日常 UI E2E、真实 Electron E2E 或基础检查组合。
+里面可以选择日常 UI E2E、真实 Electron E2E 或完整检查组合。
 其中第 3 项会依次运行 typecheck、单元测试、UI E2E 和真实 Electron E2E，适合作为提交或发布前的完整检查。
 
 默认 E2E 会打开构建后的界面并注入测试用 `compareApi`，自动验证创建清单、添加卡片、拖拽排序和备份恢复等主流程。它不会启动 Electron 主进程，因此不会触发当前 Windows 环境下偶发的 `electron.exe unknown software exception` 弹窗。
 
-真实 Electron 诊断测试需要手动开启：
+如果不用 `.bat`，真实 Electron E2E 需要手动开启环境变量；否则测试会被跳过：
 
 ```powershell
 $env:BIJIAKA_RUN_ELECTRON_E2E = '1'
@@ -98,9 +103,10 @@ npm run dist:linux
 
 1. 创建一个用于比较同类商品的清单。
 2. 选择件数、容量或重量作为统一比较基准。
-3. 新建价格卡，填写总价和包装规格。
-4. 查看统一单价和最低价标记。
-5. 使用拖动手柄调整卡片顺序。
+3. 如有需要，在“显示选项”里设置数量单位，例如瓶、袋、盒、粒。
+4. 新建价格卡，填写总价和包装规格。
+5. 查看统一单价、最低价标记和相对最低价差异。
+6. 使用拖动手柄调整卡片顺序，或用三点菜单编辑、复制卡片。
 
 每张卡片表示当前报价。编辑价格会覆盖旧值，但会保留创建时间和更新时间。
 
@@ -141,7 +147,7 @@ src/main/       Electron 主进程、SQLite 数据层和 IPC
 src/preload/    安全的渲染进程桥接 API
 src/renderer/   React 界面、样式和组件测试
 src/shared/     数据类型与纯计价模块
-tests/          自动 UI E2E 与真实 Electron 诊断测试
+tests/          浏览器 UI E2E 与真实 Electron E2E
 ```
 
 `out`、`release`、测试报告和本地数据库均为生成内容，不提交到 Git。

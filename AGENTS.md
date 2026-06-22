@@ -29,7 +29,15 @@ Windows 可直接双击：
 测试比价卡.bat
 ```
 
-该脚本提供日常 UI E2E、真实 Electron E2E 和完整检查组合，并会正确保留测试退出码。第 3 项会依次运行 typecheck、单元测试、UI E2E 和真实 Electron E2E。
+该脚本提供日常 UI E2E、真实 Electron E2E 和完整检查组合，并会正确保留测试退出码。也可以直接传参：
+
+```text
+测试比价卡.bat ui
+测试比价卡.bat electron
+测试比价卡.bat basic
+```
+
+第 3 项 / `basic` 会依次运行 typecheck、单元测试、UI E2E 和真实 Electron E2E。
 
 Windows 免安装启动入口：
 
@@ -49,14 +57,21 @@ npm test -- --run
 npm run build
 ```
 
-涉及 Electron 主进程、preload、文件对话框、数据库路径、启动脚本、拖拽、备份恢复时，尽量补跑：
+涉及交互主流程、拖拽、备份恢复、复制卡片或卡片展示逻辑时，补跑：
 
 ```powershell
 npm run test:e2e
-npm run pack:portable
 ```
 
-`npm run test:e2e` 默认执行浏览器 UI E2E：打开构建后的 renderer，并注入测试用 `compareApi`，覆盖创建清单、添加卡片、拖拽排序和备份恢复等主流程。它不会启动 Electron 主进程。
+涉及 Electron 主进程、preload、文件对话框、数据库路径、启动脚本、打包配置或发布前检查时，优先跑：
+
+```text
+测试比价卡.bat basic
+```
+
+如只想单独诊断真实 Electron，可跑下面的环境变量版本。修改启动脚本或便携包时，另补 `npm run pack:portable`。
+
+`npm run test:e2e` 默认执行浏览器 UI E2E：打开构建后的 renderer，并注入测试用 `compareApi`，覆盖创建清单、添加卡片、拖拽排序和备份恢复等主流程。它不会启动 Electron 主进程。复制卡片目前由 renderer 组件测试和数据库测试覆盖；如果后续改到跨窗口或 IPC 复杂流程，再补 E2E。
 
 真实 Electron 诊断测试使用：
 
@@ -69,6 +84,12 @@ Remove-Item Env:\BIJIAKA_RUN_ELECTRON_E2E
 真实 Electron E2E 会使用临时 `userData`，并在 Electron 启动参数里传入临时 `--user-data-dir` 与测试专用 `--no-sandbox`。原因是受限测试环境中 Chromium 子进程沙箱可能无法启动，表现为 Windows `electron.exe unknown software exception (0x80000003)`；正常应用启动不应使用 `--no-sandbox`。
 
 如果只是文档改动，可以不跑完整测试，但提交前仍需检查 `git diff --check`。
+
+E2E 注意事项：
+
+- `tests/ui.spec.ts` 使用固定安全端口池，不要改回随机 `listen(0)`；Chromium 可能抽到 6666 等 unsafe port，导致 `net::ERR_UNSAFE_PORT`。
+- UI E2E 和真实 Electron E2E 都包含“C 卡一次拖到 A 卡前面”的跨位置排序断言，不要为了让测试通过而弱化成相邻拖动。
+- 真实 Electron E2E 的 `--no-sandbox` 只允许留在测试启动参数中，不要复制到正常应用启动逻辑。
 
 ## 架构边界
 
@@ -123,7 +144,9 @@ Remove-Item Env:\BIJIAKA_RUN_ELECTRON_E2E
 - 总件数 = 包装数量 × 规格。
 - 容量统一换算为 L，重量统一换算为 kg。
 - 最低价比较基于当前清单比较基准的统一单价，并按四位小数判断并列最低。
+- 相对最低价差异是展示层增强，基于当前统一单价计算；不要改变最低价判断规则。
 - 可选的有效成分占比和倍率会影响有效单价，不能只当作展示字段。
+- 清单的数量单位 `itemUnit` 只影响文案展示，默认“件”，不参与计算。
 - 数据库结构变更必须通过迁移处理，并补数据层测试。
 - JSON 恢复必须校验格式，并在事务中替换数据。
 
@@ -131,15 +154,17 @@ Remove-Item Env:\BIJIAKA_RUN_ELECTRON_E2E
 
 - 界面语言为简体中文。
 - 新卡片保存后追加到当前清单最右侧。
+- 复制卡片只复制到当前清单，名称追加“副本”，并追加到最右侧。
 - 商品卡片竖向展示，多卡片横向排列。
 - 卡片拖拽时不应改变原始尺寸；拖拽浮层应尽量保持和原卡片一致。
 - 单价数字和当前单位可以点击复制；单位切换按钮必须与复制区域分开。
 - `L/ml`、`kg/g` 切换只是显示方式，不改变底层计算。
 - 清单用于比较同类商品，并统一使用一种比较基准。
+- “显示选项”中的数量单位用于总数量、基础单价和包装规格文案，默认值保持“件”。
 - 删除卡片应使用应用内确认弹窗，不使用系统 `window.confirm`。
 - 备份菜单点击外部或按 `Esc` 应关闭。
 - Electron 默认菜单栏应保持移除，按 `Alt` 不应出现菜单栏。
-- 当前卡片默认折叠详情；如果后续改为详情侧栏，要保留影响单价的高级修正状态提示。
+- 卡片摘要只放适合横向对比的核心字段；更多信息通过“查看详情”抽屉展示。
 
 ## 打包与生成文件
 
@@ -153,7 +178,7 @@ Remove-Item Env:\BIJIAKA_RUN_ELECTRON_E2E
 - `playwright-report/`
 - `.diag-data/`
 
-Windows 图标后续应配置为 `.ico`，并在 `package.json` 的 electron-builder 配置中声明；当前程序文件仍可能使用 Electron 默认图标。
+Windows 图标已配置为 `build/icon.ico`，并在 `package.json` 的 electron-builder 配置中声明。`build/icon.ico` 是源码资产，应提交；`release/` 仍然是生成目录，不提交。
 
 ## Git 约定
 
@@ -166,9 +191,9 @@ Windows 图标后续应配置为 `.ico`，并在 `package.json` 的 electron-bui
 
 优先级较高的改进方向：
 
-1. 详情侧栏与等高卡片。
-2. 复制卡片并预填新建表单。
-3. 相对最低价差异展示。
-4. 自定义商品单位。
-5. Windows `.ico` 图标。
-6. 更完整的拖拽和备份恢复 E2E 测试。
+1. 发布前冒烟清单：便携包启动、真实数据读写、备份恢复和图标显示。
+2. 抽取 `tests/ui.spec.ts` 与 `tests/electron.spec.ts` 中重复的 E2E helper，降低两套测试漂移风险。
+3. 备份管理增强：打开备份目录、最近自动备份列表、恢复前更详细的数据摘要。
+4. 详情抽屉继续优化：让高级换算信息更适合横向对比，同时保持卡片摘要清爽。
+5. OCR 接入前的 `CardDraft` 校对流程设计，确保识别结果必须先进入编辑抽屉再保存。
+6. 为旧备份兼容、数据库迁移和异常恢复补更多测试样例。
