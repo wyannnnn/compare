@@ -11,7 +11,7 @@ echo [Bijiaka] Test menu
 echo.
 echo   1. UI e2e test          npm run test:e2e
 echo   2. Real Electron e2e    npm run test:e2e:electron
-echo   3. Basic checks         typecheck + unit + UI e2e
+echo   3. Full checks          typecheck + unit + UI e2e + Electron e2e
 echo.
 echo Tip: you can also run:
 echo   "%~nx0" ui
@@ -65,7 +65,17 @@ if errorlevel 1 (
 echo.
 echo [Bijiaka] Running UI e2e...
 call npm run test:e2e
+if errorlevel 1 (
+  set "exitCode=%ERRORLEVEL%"
+  goto done
+)
+
+echo.
+echo [Bijiaka] Running real Electron e2e...
+set "BIJIAKA_RUN_ELECTRON_E2E=1"
+call npm run test:e2e:electron
 set "exitCode=%ERRORLEVEL%"
+set "BIJIAKA_RUN_ELECTRON_E2E="
 goto done
 
 :done

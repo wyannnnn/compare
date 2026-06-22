@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
+import { type AddressInfo } from 'node:net'
 import { extname, join, normalize } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 let server: Server | null = null
 let baseUrl = ''
+const safeTestPorts = Array.from({ length: 50 }, (_entry, index) => 41731 + index)
 
 const mimeTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -246,7 +248,7 @@ async function openApp(page: Page): Promise<void> {
     }
   })
 
-  await page.setViewportSize({ width: 1280, height: 780 })
+  await page.setViewportSize({ width: 1600, height: 900 })
   await page.goto(baseUrl)
   await expect(page.locator('.app-shell')).toBeVisible()
 }
@@ -310,22 +312,26 @@ function sortableDragHandle(page: Page, cardName: string): Locator {
 }
 
 async function dragCard(page: Page, sourceName: string, targetName: string): Promise<void> {
+  await page.locator('.board-scroll').evaluate((element) => { element.scrollLeft = 0 })
   const source = sortableDragHandle(page, sourceName)
   const targetCard = page.locator('.sortable', { has: page.getByRole('heading', { name: targetName, exact: true }) })
+  await expect(source).toBeVisible()
+  await expect(targetCard).toBeVisible()
   const sourceBox = await source.boundingBox()
   const targetBox = await targetCard.boundingBox()
   if (!sourceBox || !targetBox) throw new Error('无法定位拖拽元素')
 
   const startX = sourceBox.x + sourceBox.width / 2
   const startY = sourceBox.y + sourceBox.height / 2
-  const endX = targetBox.x + targetBox.width * 0.18
+  const endX = targetBox.x + targetBox.width * 0.08
   const endY = targetBox.y + targetBox.height / 2
 
   await page.mouse.move(startX, startY)
   await page.mouse.down()
+  await page.waitForTimeout(220)
   await page.mouse.move(startX, startY + 12, { steps: 4 })
-  await page.mouse.move(endX, endY, { steps: 36 })
-  await page.waitForTimeout(180)
+  await page.mouse.move(endX, endY, { steps: 60 })
+  await page.waitForTimeout(260)
   await page.mouse.up()
 }
 
@@ -334,9 +340,8 @@ async function clickBackupMenuItem(page: Page, name: string): Promise<void> {
   await page.getByRole('menuitem', { name }).click()
 }
 
-test.beforeAll(async () => {
-  const root = join(process.cwd(), 'out/renderer')
-  server = createServer(async (request, response) => {
+function createStaticServer(root: string): Server {
+  return createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1')
       const requestedPath = url.pathname === '/' ? '/index.html' : url.pathname
@@ -352,10 +357,52 @@ test.beforeAll(async () => {
       response.end('Not found')
     }
   })
-  await new Promise<void>((resolve) => server?.listen(0, '127.0.0.1', resolve))
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('无法启动 E2E 静态服务器')
-  baseUrl = `http://127.0.0.1:${address.port}/`
+}
+
+function listen(serverToStart: Server, port: number): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => {
+      serverToStart.off('error', onError)
+      serverToStart.off('listening', onListening)
+    }
+    const onError = (error: NodeJS.ErrnoException): void => {
+      cleanup()
+      if (error.code === 'EADDRINUSE') {
+        resolve(false)
+        return
+      }
+      reject(error)
+    }
+    const onListening = (): void => {
+      cleanup()
+      resolve(true)
+    }
+    serverToStart.once('error', onError)
+    serverToStart.once('listening', onListening)
+    serverToStart.listen(port, '127.0.0.1')
+  })
+}
+
+async function closeServer(serverToClose: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    serverToClose.close((error) => error ? reject(error) : resolve())
+  })
+}
+
+test.beforeAll(async () => {
+  const root = join(process.cwd(), 'out/renderer')
+  for (const port of safeTestPorts) {
+    const candidate = createStaticServer(root)
+    if (await listen(candidate, port)) {
+      server = candidate
+      const address = candidate.address() as AddressInfo | null
+      if (!address) throw new Error('无法读取 E2E 静态服务器地址')
+      baseUrl = `http://127.0.0.1:${address.port}/`
+      return
+    }
+    await closeServer(candidate).catch(() => undefined)
+  }
+  throw new Error('无法启动 E2E 静态服务器：安全端口池已被占用')
 })
 
 test.afterAll(async () => {

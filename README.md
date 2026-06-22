@@ -71,6 +71,7 @@ Windows 下也可以直接双击：
 ```
 
 里面可以选择日常 UI E2E、真实 Electron E2E 或基础检查组合。
+其中第 3 项会依次运行 typecheck、单元测试、UI E2E 和真实 Electron E2E，适合作为提交或发布前的完整检查。
 
 默认 E2E 会打开构建后的界面并注入测试用 `compareApi`，自动验证创建清单、添加卡片、拖拽排序和备份恢复等主流程。它不会启动 Electron 主进程，因此不会触发当前 Windows 环境下偶发的 `electron.exe unknown software exception` 弹窗。
 

@@ -29,7 +29,7 @@ Windows 可直接双击：
 测试比价卡.bat
 ```
 
-该脚本提供日常 UI E2E、真实 Electron E2E 和基础检查组合，并会正确保留测试退出码。
+该脚本提供日常 UI E2E、真实 Electron E2E 和完整检查组合，并会正确保留测试退出码。第 3 项会依次运行 typecheck、单元测试、UI E2E 和真实 Electron E2E。
 
 Windows 免安装启动入口：
 

@@ -114,22 +114,26 @@ function sortableDragHandle(page: Page, cardName: string): Locator {
 }
 
 async function dragCard(page: Page, sourceName: string, targetName: string): Promise<void> {
+  await page.locator('.board-scroll').evaluate((element) => { element.scrollLeft = 0 })
   const source = sortableDragHandle(page, sourceName)
   const targetCard = page.locator('.sortable', { has: page.getByRole('heading', { name: targetName, exact: true }) })
+  await expect(source).toBeVisible()
+  await expect(targetCard).toBeVisible()
   const sourceBox = await source.boundingBox()
   const targetBox = await targetCard.boundingBox()
   if (!sourceBox || !targetBox) throw new Error('无法定位拖拽元素')
 
   const startX = sourceBox.x + sourceBox.width / 2
   const startY = sourceBox.y + sourceBox.height / 2
-  const endX = targetBox.x + targetBox.width * 0.18
+  const endX = targetBox.x + targetBox.width * 0.08
   const endY = targetBox.y + targetBox.height / 2
 
   await page.mouse.move(startX, startY)
   await page.mouse.down()
+  await page.waitForTimeout(220)
   await page.mouse.move(startX, startY + 12, { steps: 4 })
-  await page.mouse.move(endX, endY, { steps: 36 })
-  await page.waitForTimeout(180)
+  await page.mouse.move(endX, endY, { steps: 60 })
+  await page.waitForTimeout(260)
   await page.mouse.up()
 }
 
