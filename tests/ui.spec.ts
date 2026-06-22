@@ -304,19 +304,30 @@ async function expectCardOrder(page: Page, expected: string[]): Promise<void> {
 }
 
 async function dragCard(page: Page, sourceName: string, targetName: string): Promise<void> {
-  const source = page.getByLabel(`拖动${sourceName}`)
-  const order = await cardOrder(page)
-  const sourceIndex = order.indexOf(sourceName)
-  const targetIndex = order.indexOf(targetName)
-  if (sourceIndex < 0 || targetIndex < 0) throw new Error('无法定位拖拽卡片')
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const order = await cardOrder(page)
+    const sourceIndex = order.indexOf(sourceName)
+    const targetIndex = order.indexOf(targetName)
+    if (sourceIndex < 0 || targetIndex < 0) throw new Error('无法定位拖拽卡片')
+    if (sourceIndex + 1 === targetIndex) return
 
-  await source.focus()
-  await page.keyboard.press('Space')
-  const key = sourceIndex > targetIndex ? 'ArrowLeft' : 'ArrowRight'
-  for (let step = 0; step < Math.abs(sourceIndex - targetIndex); step += 1) {
-    await page.keyboard.press(key)
+    const source = page.getByLabel(`拖动${sourceName}`)
+    const key = sourceIndex > targetIndex ? 'ArrowLeft' : 'ArrowRight'
+    const steps = sourceIndex > targetIndex
+      ? sourceIndex - targetIndex
+      : Math.max(targetIndex - sourceIndex - 1, 1)
+
+    await source.focus()
+    await page.keyboard.press('Space')
+    for (let step = 0; step < steps; step += 1) {
+      await page.keyboard.press(key)
+      await page.waitForTimeout(120)
+    }
+    await page.keyboard.press('Space')
+    await page.waitForTimeout(180)
   }
-  await page.keyboard.press('Space')
+
+  throw new Error(`拖拽排序未到位：${(await cardOrder(page)).join(' > ')}`)
 }
 
 async function clickBackupMenuItem(page: Page, name: string): Promise<void> {
