@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import type { CardDraft, ComparisonListDraft } from '../shared/types'
 import { PriceRepository } from './database'
@@ -11,6 +11,11 @@ function dateStamp(): string {
 
 function ownerWindow(window: BrowserWindow): BrowserWindow | undefined {
   return window.isDestroyed() ? undefined : window
+}
+
+function e2eBackupPath(): string | null {
+  if (process.env.BIJIAKA_E2E !== '1') return null
+  return process.env.BIJIAKA_E2E_BACKUP_PATH?.trim() || null
 }
 
 export function registerIpcHandlers(repository: PriceRepository, window: BrowserWindow): void {
@@ -34,32 +39,43 @@ export function registerIpcHandlers(repository: PriceRepository, window: Browser
   ipcMain.handle('cards:reorder', (_event, listId: string, cardIds: string[]) => repository.reorderCards(listId, cardIds))
 
   ipcMain.handle('backup:export', async () => {
-    const defaultPath = join(app.getPath('documents'), `比价卡备份-${dateStamp().slice(0, 10)}.json`)
-    const result = await dialog.showSaveDialog(ownerWindow(window), {
-      title: '导出比价卡备份',
-      defaultPath,
-      filters: [{ name: 'JSON 备份', extensions: ['json'] }]
-    })
-    if (result.canceled || !result.filePath) return { status: 'cancelled' as const }
+    const testPath = e2eBackupPath()
+    let filePath = testPath
+    if (!filePath) {
+      const defaultPath = join(app.getPath('documents'), `比价卡备份-${dateStamp().slice(0, 10)}.json`)
+      const result = await dialog.showSaveDialog(ownerWindow(window), {
+        title: '导出比价卡备份',
+        defaultPath,
+        filters: [{ name: 'JSON 备份', extensions: ['json'] }]
+      })
+      if (result.canceled || !result.filePath) return { status: 'cancelled' as const }
+      filePath = result.filePath
+    }
     const snapshot = repository.exportSnapshot()
-    await writeFile(result.filePath, JSON.stringify(snapshot, null, 2), 'utf8')
+    await mkdir(dirname(filePath), { recursive: true })
+    await writeFile(filePath, JSON.stringify(snapshot, null, 2), 'utf8')
     return {
       status: 'completed' as const,
-      path: result.filePath,
+      path: filePath,
       listCount: snapshot.lists.length,
       cardCount: snapshot.cards.length
     }
   })
 
   ipcMain.handle('backup:restore', async () => {
-    const openResult = await dialog.showOpenDialog(ownerWindow(window), {
-      title: '选择比价卡备份',
-      properties: ['openFile'],
-      filters: [{ name: 'JSON 备份', extensions: ['json'] }]
-    })
-    if (openResult.canceled || openResult.filePaths.length === 0) return { status: 'cancelled' as const }
+    const testPath = e2eBackupPath()
+    let filePath = testPath
+    if (!filePath) {
+      const openResult = await dialog.showOpenDialog(ownerWindow(window), {
+        title: '选择比价卡备份',
+        properties: ['openFile'],
+        filters: [{ name: 'JSON 备份', extensions: ['json'] }]
+      })
+      if (openResult.canceled || openResult.filePaths.length === 0) return { status: 'cancelled' as const }
+      filePath = openResult.filePaths[0]
+    }
 
-    const content = await readFile(openResult.filePaths[0], 'utf8')
+    const content = await readFile(filePath, 'utf8')
     let raw: unknown
     try {
       raw = JSON.parse(content)
@@ -67,17 +83,19 @@ export function registerIpcHandlers(repository: PriceRepository, window: Browser
       throw new Error('备份文件不是有效的 JSON')
     }
     const snapshot = validateBackupSnapshot(raw)
-    const confirmation = await dialog.showMessageBox(ownerWindow(window), {
-      type: 'warning',
-      title: '恢复备份',
-      message: `将恢复 ${snapshot.lists.length} 个清单和 ${snapshot.cards.length} 张卡片`,
-      detail: '当前数据将被替换。应用会先在本机自动保存一份恢复前备份。',
-      buttons: ['取消', '恢复'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true
-    })
-    if (confirmation.response !== 1) return { status: 'cancelled' as const }
+    if (!testPath) {
+      const confirmation = await dialog.showMessageBox(ownerWindow(window), {
+        type: 'warning',
+        title: '恢复备份',
+        message: `将恢复 ${snapshot.lists.length} 个清单和 ${snapshot.cards.length} 张卡片`,
+        detail: '当前数据将被替换。应用会先在本机自动保存一份恢复前备份。',
+        buttons: ['取消', '恢复'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true
+      })
+      if (confirmation.response !== 1) return { status: 'cancelled' as const }
+    }
 
     const backupDirectory = join(app.getPath('userData'), 'backups')
     await mkdir(backupDirectory, { recursive: true })

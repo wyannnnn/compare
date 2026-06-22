@@ -58,10 +58,20 @@ npm run dev
 npm test          # 单元测试、数据层测试和组件测试
 npm run typecheck # TypeScript 类型检查
 npm run build     # 生成生产构建到 out 目录
-npm run test:e2e  # Electron 端到端测试
+npm run test:e2e  # Electron 端到端测试入口；默认跳过真实 Electron 启动
 npm run pack:portable # 生成 Windows 免安装目录
 npm run dist:win      # 生成 Windows 安装包
 ```
+
+当前 Playwright Electron 用例需要手动启用，以避免部分 Windows 环境在测试启动/退出 Electron 时弹出 native 异常窗口：
+
+```powershell
+$env:BIJIAKA_RUN_E2E = '1'
+npm run test:e2e
+Remove-Item Env:\BIJIAKA_RUN_E2E
+```
+
+这些 E2E 用例会使用临时 `userData` 目录，不会读写你的真实应用数据。
 
 macOS 和 Linux 打包脚本：
 

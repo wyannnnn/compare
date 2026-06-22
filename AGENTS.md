@@ -22,6 +22,16 @@ npm run test:e2e
 npm run pack:portable
 ```
 
+注意：Playwright Electron E2E 目前默认跳过真实 Electron 启动。需要手动执行完整 E2E 时，在 PowerShell 中先设置：
+
+```powershell
+$env:BIJIAKA_RUN_E2E = '1'
+npm run test:e2e
+Remove-Item Env:\BIJIAKA_RUN_E2E
+```
+
+这样做是因为当前 Windows + Electron 42 + Playwright 组合在测试启动/退出 Electron 时偶发 `electron.exe unknown software exception` 弹窗；用户正常启动应用未复现该问题。
+
 Windows 免安装启动入口：
 
 ```text
@@ -47,6 +57,8 @@ npm run test:e2e
 npm run pack:portable
 ```
 
+如果要真正执行 Electron 端到端测试，需按上文设置 `BIJIAKA_RUN_E2E=1`。否则 `npm run test:e2e` 只会构建并跳过这些 Playwright Electron 用例。
+
 如果只是文档改动，可以不跑完整测试，但提交前仍需检查 `git diff --check`。
 
 ## 架构边界
@@ -55,7 +67,7 @@ npm run pack:portable
 - `src/preload/`：只暴露类型化 `compareApi`，不要暴露通用 Node 能力。
 - `src/renderer/`：React UI，不应直接访问数据库、文件系统或 Node API。
 - `src/shared/`：共享类型和纯计算逻辑，应尽量保持无副作用。
-- `tests/`：Electron 端到端测试。
+- `tests/`：Electron 端到端测试；当前需要 `BIJIAKA_RUN_E2E=1` 手动启用真实 Electron 启动。
 
 安全边界说明：
 
