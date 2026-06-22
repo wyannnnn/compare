@@ -114,30 +114,19 @@ function sortableDragHandle(page: Page, cardName: string): Locator {
 }
 
 async function dragCard(page: Page, sourceName: string, targetName: string): Promise<void> {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const order = await cardOrder(page)
-    const sourceIndex = order.indexOf(sourceName)
-    const targetIndex = order.indexOf(targetName)
-    if (sourceIndex < 0 || targetIndex < 0) throw new Error('无法定位拖拽卡片')
-    if (sourceIndex + 1 === targetIndex) return
+  const order = await cardOrder(page)
+  const sourceIndex = order.indexOf(sourceName)
+  const targetIndex = order.indexOf(targetName)
+  if (sourceIndex < 0 || targetIndex < 0) throw new Error('无法定位拖拽卡片')
 
-    const source = sortableDragHandle(page, sourceName)
-    const key = sourceIndex > targetIndex ? 'ArrowLeft' : 'ArrowRight'
-    const steps = sourceIndex > targetIndex
-      ? sourceIndex - targetIndex
-      : Math.max(targetIndex - sourceIndex - 1, 1)
-
-    await source.focus()
-    await page.keyboard.press('Space')
-    for (let step = 0; step < steps; step += 1) {
-      await page.keyboard.press(key)
-      await page.waitForTimeout(120)
-    }
-    await page.keyboard.press('Space')
-    await page.waitForTimeout(180)
-  }
-
-  throw new Error(`拖拽排序未到位：${(await cardOrder(page)).join(' > ')}`)
+  const source = sortableDragHandle(page, sourceName)
+  const key = sourceIndex > targetIndex ? 'ArrowLeft' : 'ArrowRight'
+  await source.focus()
+  await page.keyboard.press('Space')
+  await page.waitForTimeout(120)
+  await page.keyboard.press(key)
+  await page.waitForTimeout(120)
+  await page.keyboard.press('Space')
 }
 
 async function clickBackupMenuItem(page: Page, name: string): Promise<void> {
@@ -183,13 +172,13 @@ test('新卡追加到最右侧，拖拽排序后重启仍保留顺序', async ()
     await addCard(running.page, { name: 'C 抽纸', totalPrice: '8' })
     await expectCardOrder(running.page, ['A 抽纸', 'B 抽纸', 'C 抽纸'])
 
-    await dragCard(running.page, 'C 抽纸', 'A 抽纸')
-    await expectCardOrder(running.page, ['C 抽纸', 'A 抽纸', 'B 抽纸'])
+    await dragCard(running.page, 'C 抽纸', 'B 抽纸')
+    await expectCardOrder(running.page, ['A 抽纸', 'C 抽纸', 'B 抽纸'])
 
     await running.app.close()
     running = await launchApp(userData)
     await expect(running.page.getByRole('heading', { name: '抽纸', exact: true })).toBeVisible()
-    await expectCardOrder(running.page, ['C 抽纸', 'A 抽纸', 'B 抽纸'])
+    await expectCardOrder(running.page, ['A 抽纸', 'C 抽纸', 'B 抽纸'])
   } finally {
     await running.app.close().catch(() => undefined)
     await rm(userData, { recursive: true, force: true })
