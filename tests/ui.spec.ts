@@ -310,19 +310,23 @@ function sortableDragHandle(page: Page, cardName: string): Locator {
 }
 
 async function dragCard(page: Page, sourceName: string, targetName: string): Promise<void> {
-  const order = await cardOrder(page)
-  const sourceIndex = order.indexOf(sourceName)
-  const targetIndex = order.indexOf(targetName)
-  if (sourceIndex < 0 || targetIndex < 0) throw new Error('无法定位拖拽卡片')
-
   const source = sortableDragHandle(page, sourceName)
-  const key = sourceIndex > targetIndex ? 'ArrowLeft' : 'ArrowRight'
-  await source.focus()
-  await page.keyboard.press('Space')
-  await page.waitForTimeout(120)
-  await page.keyboard.press(key)
-  await page.waitForTimeout(120)
-  await page.keyboard.press('Space')
+  const targetCard = page.locator('.sortable', { has: page.getByRole('heading', { name: targetName, exact: true }) })
+  const sourceBox = await source.boundingBox()
+  const targetBox = await targetCard.boundingBox()
+  if (!sourceBox || !targetBox) throw new Error('无法定位拖拽元素')
+
+  const startX = sourceBox.x + sourceBox.width / 2
+  const startY = sourceBox.y + sourceBox.height / 2
+  const endX = targetBox.x + targetBox.width * 0.18
+  const endY = targetBox.y + targetBox.height / 2
+
+  await page.mouse.move(startX, startY)
+  await page.mouse.down()
+  await page.mouse.move(startX, startY + 12, { steps: 4 })
+  await page.mouse.move(endX, endY, { steps: 36 })
+  await page.waitForTimeout(180)
+  await page.mouse.up()
 }
 
 async function clickBackupMenuItem(page: Page, name: string): Promise<void> {
@@ -397,12 +401,12 @@ test('新卡追加到最右侧，拖拽排序后刷新仍保留顺序', async ({
   await addCard(page, { name: 'C 抽纸', totalPrice: '8' })
   await expectCardOrder(page, ['A 抽纸', 'B 抽纸', 'C 抽纸'])
 
-  await dragCard(page, 'C 抽纸', 'B 抽纸')
-  await expectCardOrder(page, ['A 抽纸', 'C 抽纸', 'B 抽纸'])
+  await dragCard(page, 'C 抽纸', 'A 抽纸')
+  await expectCardOrder(page, ['C 抽纸', 'A 抽纸', 'B 抽纸'])
 
   await page.reload()
   await expect(page.getByRole('heading', { name: '抽纸', exact: true })).toBeVisible()
-  await expectCardOrder(page, ['A 抽纸', 'C 抽纸', 'B 抽纸'])
+  await expectCardOrder(page, ['C 抽纸', 'A 抽纸', 'B 抽纸'])
 })
 
 test('导出后删除数据，再导入可完整恢复', async ({ page }) => {
