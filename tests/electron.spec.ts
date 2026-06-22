@@ -5,8 +5,8 @@ import { _electron as electron, expect, test, type ElectronApplication, type Loc
 
 test.setTimeout(45_000)
 test.skip(
-  process.env.BIJIAKA_RUN_E2E !== '1',
-  'Electron Playwright E2E 当前需要手动启用；本机 Electron 42 + Playwright 启动会偶发 native 异常弹窗。'
+  process.env.BIJIAKA_RUN_ELECTRON_E2E !== '1',
+  '真实 Electron E2E 作为诊断用例保留；默认自动 E2E 使用 tests/ui.spec.ts，避免 Windows native 崩溃弹窗。'
 )
 
 type RunningApp = {
@@ -57,7 +57,7 @@ async function createList(page: Page, options: { name: string, measure: '件数'
 
   const dialog = page.getByRole('dialog', { name: /创建对比清单/ })
   await dialog.getByLabel('清单名称').fill(options.name)
-  await dialog.getByLabel(options.measure).click()
+  await dialog.locator('.segmented label', { hasText: options.measure }).click()
   if (options.unit) {
     await dialog.getByText('显示选项').click()
     await dialog.getByLabel('数量单位（可选）').fill(options.unit)

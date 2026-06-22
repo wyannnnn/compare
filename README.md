@@ -58,20 +58,23 @@ npm run dev
 npm test          # 单元测试、数据层测试和组件测试
 npm run typecheck # TypeScript 类型检查
 npm run build     # 生成生产构建到 out 目录
-npm run test:e2e  # Electron 端到端测试入口；默认跳过真实 Electron 启动
+npm run test:e2e  # 自动 UI 端到端测试
+npm run test:e2e:electron # 真实 Electron 诊断测试，默认跳过
 npm run pack:portable # 生成 Windows 免安装目录
 npm run dist:win      # 生成 Windows 安装包
 ```
 
-当前 Playwright Electron 用例需要手动启用，以避免部分 Windows 环境在测试启动/退出 Electron 时弹出 native 异常窗口：
+默认 E2E 会打开构建后的界面并注入测试用 `compareApi`，自动验证创建清单、添加卡片、拖拽排序和备份恢复等主流程。它不会启动 Electron 主进程，因此不会触发当前 Windows 环境下偶发的 `electron.exe unknown software exception` 弹窗。
+
+真实 Electron 诊断测试需要手动开启：
 
 ```powershell
-$env:BIJIAKA_RUN_E2E = '1'
-npm run test:e2e
-Remove-Item Env:\BIJIAKA_RUN_E2E
+$env:BIJIAKA_RUN_ELECTRON_E2E = '1'
+npm run test:e2e:electron
+Remove-Item Env:\BIJIAKA_RUN_ELECTRON_E2E
 ```
 
-这些 E2E 用例会使用临时 `userData` 目录，不会读写你的真实应用数据。
+真实 Electron E2E 会使用临时 `userData` 目录，不会读写你的真实应用数据。
 
 macOS 和 Linux 打包脚本：
 
@@ -129,7 +132,7 @@ src/main/       Electron 主进程、SQLite 数据层和 IPC
 src/preload/    安全的渲染进程桥接 API
 src/renderer/   React 界面、样式和组件测试
 src/shared/     数据类型与纯计价模块
-tests/          Electron 端到端测试
+tests/          自动 UI E2E 与真实 Electron 诊断测试
 ```
 
 `out`、`release`、测试报告和本地数据库均为生成内容，不提交到 Git。
